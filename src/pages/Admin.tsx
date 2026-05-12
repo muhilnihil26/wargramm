@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { profileAvatar } from "@/lib/avatar";
 import { isConfiguredAdmin } from "@/lib/admin";
+import { isUuid } from "@/lib/ids";
 
 type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
@@ -29,6 +30,7 @@ const Admin = () => {
     queryFn: async () => {
       if (!user) return false;
       if (isConfiguredAdmin(user)) return true;
+      if (!isUuid(user.id)) return false;
       const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin");
       return (data && data.length > 0) || false;
     },
@@ -90,6 +92,7 @@ const Admin = () => {
   });
 
   const getSetting = (key: string) => settings.find((s: any) => s.key === key)?.value || "";
+  const adminUuid = user && isUuid(user.id) ? user.id : null;
 
   const updateSetting = async (key: string, value: string) => {
     const existing = settings.find((s: any) => s.key === key);
@@ -105,14 +108,14 @@ const Admin = () => {
 
   const deletePost = async (id: string) => {
     const reason = prompt("Reason for removing this post/video:") || "Removed by admin";
-    const { error } = await supabase.from("posts").update({ is_removed: true, removed_reason: reason, removed_by: user!.id, removed_at: new Date().toISOString() } as any).eq("id", id);
+    const { error } = await supabase.from("posts").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
     if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
     toast.success("Post removed with reason");
   };
   const deleteReel = async (id: string) => {
     const reason = prompt("Reason for removing this reel/video:") || "Removed by admin";
-    const { error } = await supabase.from("reels").update({ is_removed: true, removed_reason: reason, removed_by: user!.id, removed_at: new Date().toISOString() } as any).eq("id", id);
+    const { error } = await supabase.from("reels").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
     if (error) { toast.error(error.message); return; }
     queryClient.invalidateQueries({ queryKey: ["admin-reels"] });
     queryClient.invalidateQueries({ queryKey: ["reels"] });
@@ -272,6 +275,7 @@ const Admin = () => {
 };
 
 function CoinGiveaway({ users }: { users: any[] }) {
+  const { user } = useAuth();
   const [amount, setAmount] = useState(50);
   const [reason, setReason] = useState("admin_giveaway");
   const [targetMode, setTargetMode] = useState<"all" | "user">("all");
@@ -291,9 +295,9 @@ function CoinGiveaway({ users }: { users: any[] }) {
     if (targetMode === "all" && !confirm(`Give ${amount} coins to ALL users?`)) return;
     setLoading(true);
     try {
-      const args: any = { _amount: amount, _reason: reason || "admin_grant" };
+      const args: any = { _admin_uid: user?.uid || user?.id || "", _amount: amount, _reason: reason || "admin_grant" };
       if (targetMode === "user") args._target_user = selectedUser.user_id;
-      const { data, error } = await supabase.rpc("admin_grant_coins", args);
+      const { data, error } = await supabase.rpc("admin_grant_coins_client" as any, args);
       if (error) throw error;
       toast.success(`Granted ${amount} coins to ${targetMode === "all" ? `${data ?? "all"} users` : "@" + selectedUser.username}`);
       setSelectedUser(null);
@@ -312,7 +316,7 @@ function CoinGiveaway({ users }: { users: any[] }) {
           <Gift className="h-5 w-5 text-primary" />
           <p className="text-sm font-bold text-foreground">Coin giveaway</p>
         </div>
-        <p className="text-xs text-muted-foreground">Reward your community. Grant coins to a single user or send a giveaway to everyone.</p>
+        <p className="text-xs text-muted-foreground">Reward your community from the cloud. Coins stay with users on every device.</p>
 
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setTargetMode("all")} className={`rounded-lg py-2 text-xs font-semibold ${targetMode === "all" ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}>
@@ -720,7 +724,7 @@ function AddMusicForm({ adminId, onAdded }: { adminId: string; onAdded: () => vo
         resolvedTitle = data?.title || "Untitled";
       } catch { resolvedTitle = "Untitled"; }
     }
-    const { error } = await supabase.from("music").insert({ youtube_url: url.trim(), title: resolvedTitle, added_by: adminId } as any);
+    const { error } = await supabase.from("music").insert({ youtube_url: url.trim(), title: resolvedTitle, added_by: isUuid(adminId) ? adminId : null } as any);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
     setUrl(""); setTitle("");
@@ -814,7 +818,8 @@ function ReelAdsAdmin({ ads, adminId, onChanged }: { ads: any[]; adminId: string
       image_url: imageUrl.trim() || null,
       target_url: targetUrl.trim() || null,
       active: true,
-      created_by: adminId,
+      created_by: isUuid(adminId) ? adminId : null,
+      created_by_firebase_uid: adminId,
     });
     setSaving(false);
     if (error) { toast.error("Apply the ads migration first, then try again."); return; }
@@ -881,7 +886,7 @@ function NoticesAdmin({ adminId }: { adminId: string }) {
   });
   const post = async () => {
     if (!message.trim()) return;
-    const { error } = await supabase.from("app_notices").insert({ message: message.trim(), level, created_by: adminId, active: true } as any);
+    const { error } = await supabase.from("app_notices").insert({ message: message.trim(), level, created_by: isUuid(adminId) ? adminId : null, created_by_firebase_uid: adminId, active: true } as any);
     if (error) { toast.error(error.message); return; }
     setMessage("");
     toast.success("Notice posted");
@@ -941,7 +946,7 @@ function BlocksAdmin({ users, adminId }: { users: any[]; adminId: string }) {
   });
   const block = async () => {
     if (!target) return;
-    const { error } = await supabase.from("user_blocks").insert({ user_id: target.user_id, reason: reason || null, blocked_by: adminId } as any);
+    const { error } = await supabase.from("user_blocks").insert({ user_id: target.user_id, reason: reason || null, blocked_by: isUuid(adminId) ? adminId : null, blocked_by_firebase_uid: adminId } as any);
     if (error) { toast.error(error.message); return; }
     toast.success(`Blocked @${target.username}`);
     setTarget(null); setReason("");

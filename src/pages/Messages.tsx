@@ -536,8 +536,22 @@ const Messages = () => {
   const searchForUsers = async (query: string) => {
     setSearchUsers(query);
     if (!user || query.length < 2) { setSearchResults([]); return; }
-    const base = supabase.from("profiles").select("user_id, username, avatar_url, is_verified").ilike("username", `%${query}%`).limit(10);
-    const { data } = isUuid(user.id) ? await base.neq("user_id", user.id) : await base;
+    const term = query.trim().replace(/[,()]/g, " ");
+    const base = supabase
+      .from("profiles")
+      .select("user_id, username, full_name, avatar_url, is_verified, email")
+      .or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%`)
+      .limit(10);
+    let { data, error } = isUuid(user.id) ? await base.neq("user_id", user.id) : await base;
+    if (error) {
+      const fallback = supabase
+        .from("profiles")
+        .select("user_id, username, full_name, avatar_url, is_verified")
+        .or(`username.ilike.%${term}%,full_name.ilike.%${term}%`)
+        .limit(10);
+      const res = isUuid(user.id) ? await fallback.neq("user_id", user.id) : await fallback;
+      data = res.data;
+    }
     setSearchResults(data || []);
   };
 

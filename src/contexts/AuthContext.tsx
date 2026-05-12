@@ -116,7 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       if (userCredential.user) {
-        await sendEmailVerification(userCredential.user);
+        await sendEmailVerification(userCredential.user, {
+          url: `${window.location.origin}/auth`,
+          handleCodeInApp: true,
+        });
       }
     } catch (error) {
       throw error;
@@ -129,7 +132,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await FirebaseAuthentication.sendPasswordResetEmail({ email });
         return;
       }
-      await sendPasswordResetEmail(auth, email);
+      await sendPasswordResetEmail(auth, email, {
+        url: `${window.location.origin}/reset-password`,
+        handleCodeInApp: true,
+      });
     } catch (error) {
       throw error;
     }

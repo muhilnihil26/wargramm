@@ -100,11 +100,13 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
           return;
         }
       }
-      const { data: profiles } = await supabase
+      const fallbackQuery = supabase
         .from("profiles")
         .select("user_id, username, avatar_url")
-        .neq("user_id", user.id)
         .limit(50);
+      const { data: profiles } = isUuid(user.id)
+        ? await fallbackQuery.neq("user_id", user.id)
+        : await fallbackQuery;
       setUsers((profiles || []) as UserRow[]);
       setLoading(false);
     };

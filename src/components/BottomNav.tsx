@@ -14,20 +14,21 @@ export function BottomNav() {
   const { flag } = useAppSettings();
   const visibleItems = navItems.filter((i) => !i.flag || flag(i.flag));
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]">
-      <div className="mx-auto flex max-w-lg items-center justify-around py-2">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur-lg pb-[env(safe-area-inset-bottom)] lg:bottom-auto lg:right-auto lg:top-0 lg:h-screen lg:w-24 lg:border-r lg:border-t-0 lg:pb-0">
+      <div className="mx-auto flex max-w-lg items-center justify-around py-2 lg:h-full lg:flex-col lg:justify-center lg:gap-3 lg:px-2">
         {visibleItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             data-tour={item.tour}
             className={({ isActive }) =>
-              `flex flex-col items-center gap-0.5 p-2 transition-colors ${
-                isActive ? "text-foreground" : "text-muted-foreground"
+              `flex flex-col items-center gap-1 rounded-xl p-2 transition-colors lg:w-full lg:px-2 lg:py-3 ${
+                isActive ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
               }`
             }
           >
             <item.icon className="h-6 w-6" strokeWidth={1.5} />
+            <span className="hidden text-[11px] font-semibold lg:block">{item.label}</span>
           </NavLink>
         ))}
       </div>

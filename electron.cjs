@@ -101,9 +101,9 @@ app.setPath("userData", userDataDir);
 
 async function createWindow() {
   const win = new BrowserWindow({
-    width: 430,
-    height: 820,
-    minWidth: 360,
+    width: 1280,
+    height: 800,
+    minWidth: 960,
     minHeight: 640,
     title: "Wargram",
     icon: path.join(__dirname, "public", "favicon.ico"),
