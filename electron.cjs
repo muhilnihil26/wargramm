@@ -1,8 +1,9 @@
 const { app, BrowserWindow, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const http = require("node:http");
 
-const DESKTOP_URL = "https://wargram.netlify.app";
+const DESKTOP_PORT = 41737;
 const AUTH_POPUP_HOSTS = [
   "accounts.google.com",
   "wargram-c2a79.firebaseapp.com",
@@ -20,6 +21,54 @@ function isAuthPopup(url) {
   }
 }
 
+function contentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".js") return "text/javascript; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".png") return "image/png";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".ico") return "image/x-icon";
+  if (ext === ".mp3") return "audio/mpeg";
+  if (ext === ".wav") return "audio/wav";
+  return "application/octet-stream";
+}
+
+function startLocalAppServer() {
+  const distDir = path.join(__dirname, "dist");
+  const server = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url || "/", `http://localhost:${DESKTOP_PORT}`);
+    const decodedPath = decodeURIComponent(requestUrl.pathname);
+    const safePath = decodedPath === "/" ? "/index.html" : decodedPath;
+    let filePath = path.join(distDir, safePath);
+
+    if (!filePath.startsWith(distDir)) {
+      res.writeHead(403);
+      res.end("Forbidden");
+      return;
+    }
+
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+      filePath = path.join(distDir, "index.html");
+    }
+
+    fs.readFile(filePath, (err, data) => {
+      if (err) {
+        res.writeHead(500);
+        res.end("Could not load Wargram");
+        return;
+      }
+      res.writeHead(200, { "Content-Type": contentType(filePath) });
+      res.end(data);
+    });
+  });
+
+  return new Promise((resolve) => {
+    server.listen(DESKTOP_PORT, "localhost", () => resolve(`http://localhost:${DESKTOP_PORT}`));
+    server.on("error", () => resolve("https://wargram.netlify.app"));
+  });
+}
+
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-gpu-compositing");
@@ -28,7 +77,7 @@ const userDataDir = path.join(path.dirname(process.execPath), "user-data");
 fs.mkdirSync(userDataDir, { recursive: true });
 app.setPath("userData", userDataDir);
 
-function createWindow() {
+async function createWindow() {
   const win = new BrowserWindow({
     width: 430,
     height: 820,
@@ -45,7 +94,8 @@ function createWindow() {
   });
 
   win.removeMenu();
-  win.loadURL(DESKTOP_URL).catch(() => {
+  const appUrl = await startLocalAppServer();
+  win.loadURL(appUrl).catch(() => {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
