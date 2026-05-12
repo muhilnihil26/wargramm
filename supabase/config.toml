@@ -1,0 +1,7 @@
+project_id = "gggfjptfouiniexrouwk"
+
+[functions.sync-coupons]
+verify_jwt = false
+
+[functions.auth-callback]
+verify_jwt = false

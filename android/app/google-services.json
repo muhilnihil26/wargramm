@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "936093319009",
+    "firebase_url": "https://wargram-c2a79-default-rtdb.firebaseio.com",
+    "project_id": "wargram-c2a79",
+    "storage_bucket": "wargram-c2a79.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:936093319009:android:317dece1d011db36db0f20",
+        "android_client_info": {
+          "package_name": "War.wargram.com"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "936093319009-gl5qhdicne1aqrfc1sv3m7rt89tsjro7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBv7k5oCbCt-tueCsD4rRVV5llbkmln8VI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "936093319009-fl08drda5facaiv1vap77tahec9injrq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
