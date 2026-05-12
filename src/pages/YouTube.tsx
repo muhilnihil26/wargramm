@@ -6,10 +6,11 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MusicTrimmer } from "@/components/MusicTrimmer";
+import { isUuid } from "@/lib/ids";
+import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 
 function getYouTubeId(url: string): string | null {
-  const m = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-  return m ? m[1] : null;
+  return parseYouTubeId(url);
 }
 function getPlaylistId(url: string): string | null {
   // Matches ?list=… or &list=… or playlist?list=…
@@ -37,7 +38,9 @@ const YouTube = () => {
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(60);
   const [saving, setSaving] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [localVersion, setLocalVersion] = useState(0);
 
   // share-from-library state
   const [shareItem, setShareItem] = useState<any | null>(null);
@@ -57,16 +60,35 @@ const YouTube = () => {
   const detectedPlaylistId = getPlaylistId(url.trim());
   const detectedVideoId = getYouTubeId(url.trim());
   const isPlaylistUrl = !!detectedPlaylistId && !detectedVideoId;
+  const localStorageKey = user ? `wargram-youtube-library:${user.id}` : "";
+  const cloudTable = user && isUuid(user.id) ? "youtube_library" : "youtube_library_client";
+
+  const readLocalItems = () => {
+    if (!localStorageKey) return [];
+    try {
+      return JSON.parse(localStorage.getItem(localStorageKey) || "[]");
+    } catch {
+      return [];
+    }
+  };
+
+  const writeLocalItems = (next: any[]) => {
+    if (!localStorageKey) return;
+    localStorage.setItem(localStorageKey, JSON.stringify(next));
+    setLocalVersion((v) => v + 1);
+  };
 
   const { data: items = [] } = useQuery({
-    queryKey: ["youtube-library", user?.id],
+    queryKey: ["youtube-library", user?.id, localVersion],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("youtube_library")
+      const localItems = readLocalItems();
+      const { data, error } = await supabase
+        .from(cloudTable as any)
         .select("*")
-        .eq("user_id", user!.id)
+        .eq(isUuid(user!.id) ? "user_id" : "firebase_uid", user!.id)
         .order("created_at", { ascending: false });
+      if (error) return localItems;
       return data || [];
     },
   });
@@ -97,34 +119,82 @@ const YouTube = () => {
     }
     setSaving(true);
     const isPlaylist = !videoId && !!playlistId;
+    const normalizedUrl = normalizeYouTubeUrl(trimmed);
+    const resolvedTitle = await resolveTitle(normalizedUrl, isPlaylist);
     const payload: any = {
-      user_id: user.id,
-      url: trimmed,
-      title: title.trim() || (isPlaylist ? "Saved playlist" : "Saved video"),
-      thumbnail_url: thumbFor(trimmed),
+      url: normalizedUrl,
+      title: resolvedTitle,
+      thumbnail_url: thumbFor(normalizedUrl),
       trim_start: trimStart,
       trim_end: trimEnd,
       is_playlist: isPlaylist,
       playlist_id: playlistId,
     };
-    const { error } = await supabase.from("youtube_library").insert(payload);
+    if (isUuid(user.id)) payload.user_id = user.id;
+    else payload.firebase_uid = user.id;
+    const { data, error } = await supabase.from(cloudTable as any).insert(payload).select("*").single();
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
-    toast.success(isPlaylist ? "Playlist saved" : "Saved to your library");
+    if (error) {
+      const localItem = { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
+      writeLocalItems([localItem, ...readLocalItems()]);
+      toast.info("Saved on this device. Apply the YouTube migration to sync it in cloud.");
+    } else {
+      if (data) writeLocalItems(readLocalItems().filter((it: any) => it.url !== data.url));
+      toast.success(isPlaylist ? "Playlist saved" : "Saved to your library");
+    }
     setUrl(""); setTitle(""); setTrimStart(0); setTrimEnd(60); setPreviewUrl("");
     qc.invalidateQueries({ queryKey: ["youtube-library", user.id] });
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Remove from library?")) return;
-    const { error } = await supabase.from("youtube_library").delete().eq("id", id);
+    if (id.startsWith("local-")) {
+      writeLocalItems(readLocalItems().filter((it: any) => it.id !== id));
+      return;
+    }
+    const { error } = await supabase.from(cloudTable as any).delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     qc.invalidateQueries({ queryKey: ["youtube-library", user?.id] });
+  };
+
+  const resolveTitle = async (inputUrl: string, playlist: boolean) => {
+    const manualTitle = title.trim();
+    if (manualTitle) return manualTitle;
+    if (playlist) return getPlaylistId(inputUrl) ? `Playlist ${getPlaylistId(inputUrl)}` : "Saved playlist";
+    const videoId = getYouTubeId(inputUrl);
+    if (!videoId) return "Saved video";
+    try {
+      const { data } = await supabase.functions.invoke("detect-music-title", {
+        body: { youtube_url: inputUrl, url: inputUrl },
+      });
+      if (data?.title) return data.title;
+    } catch {
+      // Keep saving working if the edge function or YouTube oEmbed is unavailable.
+    }
+    return `YouTube - ${videoId}`;
+  };
+
+  const handleAnalyze = async () => {
+    const trimmed = url.trim();
+    if (!getYouTubeId(trimmed) && !getPlaylistId(trimmed)) {
+      toast.error("Paste a valid YouTube URL first");
+      return;
+    }
+    setAnalyzing(true);
+    const normalized = normalizeYouTubeUrl(trimmed);
+    const resolvedTitle = await resolveTitle(normalized, !!getPlaylistId(trimmed) && !getYouTubeId(trimmed));
+    setAnalyzing(false);
+    setTitle(resolvedTitle);
+    toast.success("Title detected");
   };
 
   const handleShare = async () => {
     if (!user || !shareItem) return;
     if (shareItem.is_playlist) { toast.error("Playlists can't be shared as a Post/Reel"); return; }
+    if (!isUuid(user.id)) {
+      toast.error("Cloud posting needs the Supabase profile migration. The video is saved and playable in your YouTube library.");
+      return;
+    }
     setPosting(true);
     try {
       if (shareTarget === "reel" || shareTarget === "short") {
@@ -145,10 +215,10 @@ const YouTube = () => {
         if (error) throw error;
         toast.success(shareTarget === "short" ? "Posted to Shorts!" : "Posted to Reels!");
       } else {
-        const image = shareItem.thumbnail_url || `https://i.ytimg.com/vi/${getYouTubeId(shareItem.url)}/hqdefault.jpg`;
         const { error } = await supabase.from("posts").insert({
           user_id: user.id,
-          image_url: image,
+          image_url: shareItem.url,
+          is_video: true,
           caption: shareCaption || shareItem.title,
           music_url: shareItem.url,
           music_title: shareItem.title,
@@ -170,12 +240,12 @@ const YouTube = () => {
   const livePreviewPlaylistId = getPlaylistId(previewUrl || url);
 
   const viewerEmbed = (it: any) => {
-    if (it.is_playlist && it.playlist_id) {
-      return `https://www.youtube.com/embed/videoseries?list=${it.playlist_id}`;
-    }
-    const id = getYouTubeId(it.url);
-    if (!id) return "";
-    return `https://www.youtube.com/embed/${id}?start=${it.trim_start || 0}${it.trim_end > (it.trim_start || 0) ? `&end=${it.trim_end}` : ""}&autoplay=1`;
+    return youtubeEmbedUrl(it.url, {
+      playlistId: it.playlist_id,
+      start: it.trim_start || 0,
+      end: it.trim_end,
+      autoplay: true,
+    });
   };
 
   return (
@@ -206,16 +276,22 @@ const YouTube = () => {
             placeholder="Title (optional)"
             className="w-full rounded-lg border border-border bg-background px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:border-primary"
           />
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={analyzing || !url.trim()}
+            className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-foreground disabled:opacity-50"
+          >
+            {analyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+            Analyze title
+          </button>
           {(livePreviewVideoId || livePreviewPlaylistId) && (
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
               <iframe
-                src={
-                  livePreviewVideoId
-                    ? `https://www.youtube.com/embed/${livePreviewVideoId}?start=${trimStart}${trimEnd > trimStart ? `&end=${trimEnd}` : ""}`
-                    : `https://www.youtube.com/embed/videoseries?list=${livePreviewPlaylistId}`
-                }
+                src={youtubeEmbedUrl(previewUrl || url, { playlistId: livePreviewPlaylistId, start: trimStart, end: trimEnd })}
                 className="h-full w-full"
-                allow="autoplay; encrypted-media"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
                 title="preview"
               />
             </div>
@@ -429,9 +505,10 @@ const YouTube = () => {
             <p className="text-sm font-bold text-foreground">Share to {shareTarget === "reel" ? "Reels" : shareTarget === "short" ? "Shorts" : "Home Feed"}</p>
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
               <iframe
-                src={`https://www.youtube.com/embed/${getYouTubeId(shareItem.url)}?start=${shareItem.trim_start}${shareItem.trim_end > shareItem.trim_start ? `&end=${shareItem.trim_end}` : ""}`}
+                src={youtubeEmbedUrl(shareItem.url, { start: shareItem.trim_start, end: shareItem.trim_end })}
                 className="h-full w-full"
-                allow="autoplay; encrypted-media"
+                allow="autoplay; encrypted-media; picture-in-picture"
+                allowFullScreen
                 title="share preview"
               />
             </div>

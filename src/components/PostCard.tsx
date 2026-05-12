@@ -13,6 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { isUuid } from "@/lib/ids";
+import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
 
 import { VerifiedBadge } from "./VerifiedBadge";
 
@@ -132,12 +133,12 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
 
         <div className="relative bg-black" onDoubleClick={handleDoubleTap}>
           {(() => {
-            const ytMatch = image.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-            if (ytMatch) {
+            const ytId = getYouTubeId(image);
+            if (ytId) {
               return (
                 <div className="relative w-full aspect-video">
                   <iframe
-                    src={`https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1&playsinline=1`}
+                    src={youtubeEmbedUrl(image)}
                     title="YouTube video"
                     className="absolute inset-0 w-full h-full"
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"

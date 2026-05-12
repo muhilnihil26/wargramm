@@ -10,11 +10,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
-
-function getYouTubeId(u: string): string | null {
-  const m = u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-  return m ? m[1] : null;
-}
+import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 
 interface ReelItemProps {
   id: string;
@@ -172,14 +168,14 @@ export function ReelItem({
         <div className="absolute inset-0 bg-black">
           {isVisible ? (
             <iframe
-              src={`https://www.youtube.com/embed/${youTubeId}?autoplay=1&mute=${globalMuted ? 1 : 0}&loop=1&playlist=${youTubeId}&controls=1&playsinline=1&modestbranding=1&rel=0`}
+              src={`${youtubeEmbedUrl(video, { autoplay: true, mute: globalMuted, loop: true })}&controls=1`}
               title="YouTube"
               className="h-full w-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
           ) : (
-            <img src={`https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" />
+            <img src={youtubeThumbnail(video) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" />
           )}
         </div>
       ) : isImage ? (

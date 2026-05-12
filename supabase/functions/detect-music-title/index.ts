@@ -6,17 +6,35 @@ const corsHeaders = {
 };
 
 function getYouTubeId(url: string): string | null {
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-  return match ? match[1] : null;
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/^www\./, "").replace(/^m\./, "");
+    if (host === "youtu.be") {
+      const id = parsed.pathname.split("/").filter(Boolean)[0];
+      return /^[\w-]{11}$/.test(id || "") ? id : null;
+    }
+    if (host === "youtube.com" || host === "music.youtube.com" || host === "youtube-nocookie.com") {
+      const watchId = parsed.searchParams.get("v");
+      if (/^[\w-]{11}$/.test(watchId || "")) return watchId;
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      const marker = parts.findIndex((part) => ["embed", "shorts", "live", "v"].includes(part));
+      if (marker >= 0 && /^[\w-]{11}$/.test(parts[marker + 1] || "")) return parts[marker + 1];
+    }
+  } catch {
+    // Fall through to regex for pasted text.
+  }
+  const match = url.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/i);
+  return match?.[1] || null;
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { youtube_url } = await req.json();
+    const body = await req.json();
+    const youtube_url = body.youtube_url || body.url;
     if (!youtube_url) {
-      return new Response(JSON.stringify({ error: "youtube_url is required" }), {
+      return new Response(JSON.stringify({ error: "youtube_url or url is required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

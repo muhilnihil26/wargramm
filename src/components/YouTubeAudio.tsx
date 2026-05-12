@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Music, Volume2, VolumeX } from "lucide-react";
-
-function getYouTubeId(url: string): string | null {
-  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-  return match ? match[1] : null;
-}
+import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
 
 interface YouTubeAudioProps {
   url: string;
@@ -57,7 +53,7 @@ export function YouTubeAudio({ url, title, start = 0, end, autoPlay = true, comp
       {/* Hidden iframe for audio playback */}
       <iframe
         ref={iframeRef}
-        src={`https://www.youtube.com/embed/${videoId}?${params.toString()}`}
+        src={`${youtubeEmbedUrl(url, { start, end, autoplay: autoPlay, loop: true, mute: muted })}&controls=${params.get("controls") || "0"}`}
         allow="autoplay; encrypted-media"
         className="h-0 w-0 border-0 opacity-0 pointer-events-none absolute"
         style={{ position: "absolute", left: "-9999px" }}
