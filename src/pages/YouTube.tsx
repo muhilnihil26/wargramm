@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { MusicTrimmer } from "@/components/MusicTrimmer";
 import { isUuid } from "@/lib/ids";
 import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
+import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 
 function getYouTubeId(url: string): string | null {
   return parseYouTubeId(url);
@@ -191,10 +192,6 @@ const YouTube = () => {
   const handleShare = async () => {
     if (!user || !shareItem) return;
     if (shareItem.is_playlist) { toast.error("Playlists can't be shared as a Post/Reel"); return; }
-    if (!isUuid(user.id)) {
-      toast.error("Cloud posting needs the Supabase profile migration. The video is saved and playable in your YouTube library.");
-      return;
-    }
     setPosting(true);
     try {
       if (shareTarget === "reel" || shareTarget === "short") {
@@ -204,7 +201,7 @@ const YouTube = () => {
           if (id) videoUrl = `https://youtube.com/shorts/${id}`;
         }
         const { error } = await supabase.from("reels").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           video_url: videoUrl,
           caption: shareCaption,
           music_url: shareItem.url,
@@ -216,7 +213,7 @@ const YouTube = () => {
         toast.success(shareTarget === "short" ? "Posted to Shorts!" : "Posted to Reels!");
       } else {
         const { error } = await supabase.from("posts").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           image_url: shareItem.url,
           is_video: true,
           caption: shareCaption || shareItem.title,

@@ -112,6 +112,6 @@ export async function applySignupBonuses(newUserId: string, referrerUserId?: str
 }
 
 export function buildReferralLink(userId: string): string {
-  const base = typeof window !== "undefined" ? window.location.origin : "https://wargram.lovable.app";
+  const base = typeof window !== "undefined" ? window.location.origin : "https://wargram.app";
   return `${base}/auth?ref=${userId}`;
 }

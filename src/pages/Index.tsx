@@ -15,6 +15,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
+import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 
 const Index = () => {
   const { user } = useAuth();
@@ -35,7 +36,7 @@ const Index = () => {
 
       if (!data || data.length === 0) return [];
 
-      const userIds = [...new Set(data.map((s: any) => s.user_id))];
+      const userIds = [...new Set(data.map((s: any) => s.user_id).filter(Boolean))];
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, username, avatar_url")
@@ -44,6 +45,7 @@ const Index = () => {
       return data.map((s: any) => ({
         ...s,
         profile: profiles?.find((p: any) => p.user_id === s.user_id),
+        owner_id: mediaOwnerId(s),
       }));
     },
     refetchInterval: 60000,
@@ -52,11 +54,12 @@ const Index = () => {
   // Group stories by user
   const storyUsers = Array.from(
     storyData.reduce((map: Map<string, any>, s: any) => {
-      if (!map.has(s.user_id)) {
-        map.set(s.user_id, {
-          userId: s.user_id,
-          username: s.profile?.username || "user",
-          avatar: profileAvatar(s.profile?.avatar_url, s.user_id, s.profile?.username),
+      const ownerId = mediaOwnerId(s);
+      if (!map.has(ownerId)) {
+        map.set(ownerId, {
+          userId: ownerId,
+          username: mediaOwnerName(s, s.profile),
+          avatar: profileAvatar(mediaOwnerAvatar(s, s.profile), ownerId, mediaOwnerName(s, s.profile)),
           hasStory: true,
         });
       }
@@ -96,9 +99,9 @@ const Index = () => {
 
       return postsData.map((p: any) => ({
         id: p.id,
-        username: p.profiles?.username || "user",
-        userId: p.user_id,
-        avatar: profileAvatar(p.profiles?.avatar_url, p.user_id, p.profiles?.username),
+        username: mediaOwnerName(p, p.profiles),
+        userId: mediaOwnerId(p),
+        avatar: profileAvatar(mediaOwnerAvatar(p, p.profiles), mediaOwnerId(p), mediaOwnerName(p, p.profiles)),
         image: p.image_url,
         isVideo: !!p.is_video,
         caption: p.caption || "",
@@ -126,13 +129,13 @@ const Index = () => {
         .order("created_at", { ascending: false })
         .limit(30);
       if (!data) return [];
-      const userIds = [...new Set(data.map((r: any) => r.user_id))];
+      const userIds = [...new Set(data.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       return data.map((r: any) => ({
         id: r.id,
-        userId: r.user_id,
-        username: profiles?.find((p: any) => p.user_id === r.user_id)?.username || "user",
-        avatar: profileAvatar(profiles?.find((p: any) => p.user_id === r.user_id)?.avatar_url, r.user_id, profiles?.find((p: any) => p.user_id === r.user_id)?.username),
+        userId: mediaOwnerId(r),
+        username: mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id)),
+        avatar: profileAvatar(mediaOwnerAvatar(r, profiles?.find((p: any) => p.user_id === r.user_id)), mediaOwnerId(r), mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id))),
         video: r.video_url,
         caption: r.caption || "",
         music: r.music_title || "Original Audio",
@@ -154,9 +157,9 @@ const Index = () => {
   };
 
   const handleStoryClick = (userId: string) => {
-    const userStories = storyData.filter((s: any) => s.user_id === userId);
+    const userStories = storyData.filter((s: any) => mediaOwnerId(s) === userId);
     if (userStories.length > 0) {
-      const firstIndex = storyData.findIndex((s: any) => s.user_id === userId);
+      const firstIndex = storyData.findIndex((s: any) => mediaOwnerId(s) === userId);
       setStoryViewerIndex(firstIndex);
       setShowStoryViewer(true);
     }
@@ -175,7 +178,7 @@ const Index = () => {
               <StoryCircle
                 username="Your story"
                 avatar={ownStoryAvatar}
-                hasStory={storyData.some((s: any) => s.user_id === user?.id)}
+        hasStory={storyData.some((s: any) => mediaOwnerId(s) === user?.id)}
                 isOwn
                 onClick={() => setShowAddStory(true)}
               />

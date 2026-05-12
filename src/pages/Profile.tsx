@@ -63,8 +63,8 @@ const Profile = () => {
     staleTime: 5_000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      if (!user || !isUuid(user.id)) return [];
-      const { data } = await supabase.from("posts").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      if (!user) return [];
+      const { data } = await supabase.from("posts").select("*").eq(isUuid(user.id) ? "user_id" : "firebase_uid", user.id).order("created_at", { ascending: false });
       return data || [];
     },
     enabled: !!user,
@@ -74,8 +74,8 @@ const Profile = () => {
     queryKey: ["user-reels", user?.id],
     staleTime: 5_000,
     queryFn: async () => {
-      if (!user || !isUuid(user.id)) return [];
-      const { data } = await supabase.from("reels").select("*").eq("user_id", user.id).order("created_at", { ascending: false });
+      if (!user) return [];
+      const { data } = await supabase.from("reels").select("*").eq(isUuid(user.id) ? "user_id" : "firebase_uid", user.id).order("created_at", { ascending: false });
       return data || [];
     },
     enabled: !!user,

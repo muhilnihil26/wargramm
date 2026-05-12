@@ -6,15 +6,15 @@ const URL_RE = /(\bhttps?:\/\/[^\s<>"']+|\bwww\.[^\s<>"']+)/gi;
 
 /** Hosts that should open inside the app instead of a new tab. */
 const APP_HOSTS = new Set<string>([
-  "wargram.lovable.app",
-  // Live preview / publish previews share the same host suffix:
+  "wargram.app",
+  "muhilsiddhesh.in",
 ]);
 
 function isAppLink(href: string): { internal: boolean; path: string } {
   try {
     const u = new URL(href);
     const sameOrigin = typeof window !== "undefined" && u.origin === window.location.origin;
-    const knownHost = APP_HOSTS.has(u.hostname) || u.hostname.endsWith(".lovable.app");
+    const knownHost = APP_HOSTS.has(u.hostname);
     if (sameOrigin || knownHost) {
       return { internal: true, path: u.pathname + u.search + u.hash || "/" };
     }

@@ -1,5 +1,5 @@
 // Auth callback proxy. Reachable at /functions/v1/auth-callback.
-// Admin can also expose this as https://wargram.lovable.app/api/auth/callback via a redirect/rewrite.
+// Admin can expose this through the deployed app as /api/auth/callback via a redirect/rewrite.
 // This function reads ?code=...&next=... and forwards to Supabase verify, then bounces the browser
 // back into the SPA so onAuthStateChange picks up the session.
 
@@ -14,7 +14,7 @@ Deno.serve(async (req: Request) => {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const next = url.searchParams.get("next") || "/";
-  const origin = url.searchParams.get("origin") || "https://wargram.lovable.app";
+  const origin = url.searchParams.get("origin") || Deno.env.get("APP_ORIGIN") || "https://wargram.app";
 
   // If no code, just bounce home.
   if (!code) {

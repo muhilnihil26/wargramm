@@ -140,5 +140,5 @@ INSERT INTO public.admin_settings (key, value) VALUES
   ('coins_post_reward', '5'),
   ('coins_reel_reward', '10'),
   ('coins_login_bonus', '100'),
-  ('auth_callback_url', 'https://wargram.lovable.app/api/auth/callback')
+  ('auth_callback_url', 'https://wargram.app/api/auth/callback')
 ON CONFLICT DO NOTHING;

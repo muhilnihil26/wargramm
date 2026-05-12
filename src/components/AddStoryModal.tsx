@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 
 interface AddStoryModalProps {
   onClose: () => void;
@@ -84,7 +85,7 @@ export function AddStoryModal({ onClose }: AddStoryModalProps) {
 
       const { data: { publicUrl } } = supabase.storage.from("stories").getPublicUrl(path);
       const { error } = await supabase.from("stories").insert({
-        user_id: user.id,
+        ...mediaOwnerPayload(user),
         image_url: publicUrl,
         visibility,
       } as any);

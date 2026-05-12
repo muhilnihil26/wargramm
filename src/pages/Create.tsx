@@ -9,6 +9,7 @@ import { MusicTrimmer } from "@/components/MusicTrimmer";
 import { rewardForPost } from "@/lib/coins";
 import { CameraCapture } from "@/components/CameraCapture";
 import { MediaEditor } from "@/components/MediaEditor";
+import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 
 type Visibility = "public" | "followers" | "only_me";
 
@@ -85,7 +86,7 @@ const Create = () => {
           } catch {}
         }
         const { error: insErr } = await supabase.from("posts").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           image_url: publicUrl,
           is_video: true,
           caption,
@@ -112,7 +113,7 @@ const Create = () => {
           } catch {}
         }
         const { error: postError } = await supabase.from("posts").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           image_url: publicUrl,
           caption,
           visibility,

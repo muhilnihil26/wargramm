@@ -8,6 +8,9 @@ interface Story {
   image_url: string;
   created_at: string;
   user_id: string;
+  owner_id?: string;
+  firebase_display_name?: string | null;
+  firebase_photo_url?: string | null;
   music_url?: string | null;
   music_title?: string | null;
   profile?: { username: string; avatar_url: string | null };
@@ -81,6 +84,9 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
 
   const goPrev = () => (currentIndex > 0 ? setCurrentIndex(currentIndex - 1) : onClose());
   const goNext = () => (currentIndex < stories.length - 1 ? setCurrentIndex(currentIndex + 1) : onClose());
+  const ownerId = story.owner_id || story.user_id;
+  const ownerName = story.profile?.username || story.firebase_display_name || "user";
+  const ownerAvatar = story.profile?.avatar_url || story.firebase_photo_url;
 
   return (
     <div className="fixed inset-0 z-[200] bg-black flex items-center justify-center select-none">
@@ -102,11 +108,11 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
       <div className="absolute top-6 left-4 right-4 flex items-center justify-between z-20">
         <div className="flex items-center gap-3">
           <img
-            src={profileAvatar(story.profile?.avatar_url, story.user_id, story.profile?.username)}
+            src={profileAvatar(ownerAvatar, ownerId, ownerName)}
             alt=""
             className="h-8 w-8 rounded-full object-cover"
           />
-          <span className="text-sm font-semibold text-white">{story.profile?.username || "user"}</span>
+          <span className="text-sm font-semibold text-white">{ownerName}</span>
           <span className="text-xs text-white/60">{getTimeAgo(story.created_at)}</span>
         </div>
         <div className="flex items-center gap-3">

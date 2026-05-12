@@ -60,7 +60,11 @@ Deno.serve(async (req) => {
     const { data: currentSettings } = await admin.from("admin_settings").select("key, value");
     const ctx = (currentSettings || []).map((s: any) => `${s.key} = ${JSON.stringify(s.value)}`).join("\n");
 
-    const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiGatewayUrl = Deno.env.get("AI_GATEWAY_URL");
+    if (!aiGatewayUrl) {
+      return new Response(JSON.stringify({ error: "AI gateway is not configured." }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+    const aiResp = await fetch(aiGatewayUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -102,7 +106,7 @@ Deno.serve(async (req) => {
     if (!aiResp.ok) {
       const t = await aiResp.text();
       if (aiResp.status === 429) return new Response(JSON.stringify({ error: "Rate limit. Try again shortly." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      if (aiResp.status === 402) return new Response(JSON.stringify({ error: "Lovable AI credits exhausted." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (aiResp.status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       console.error("AI error", aiResp.status, t);
       return new Response(JSON.stringify({ error: "AI gateway error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

@@ -11,8 +11,8 @@ import { MusicTrimmer } from "@/components/MusicTrimmer";
 import { rewardForReel } from "@/lib/coins";
 import { profileAvatar } from "@/lib/avatar";
 import { useAppSettings } from "@/hooks/useAppSettings";
-
-const YT_URL_RE = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/;
+import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName, mediaOwnerPayload } from "@/lib/firebaseMedia";
+import { getYouTubeId } from "@/lib/youtube";
 
 const Reels = () => {
   const { user } = useAuth();
@@ -83,12 +83,12 @@ const Reels = () => {
         .order("created_at", { ascending: false });
       if (!data) return [];
       const visibleReels = data.filter((r: any) => !r.is_removed);
-      const userIds = [...new Set(visibleReels.map((r: any) => r.user_id))];
+      const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       return visibleReels.map((r: any) => ({
         ...r,
-        username: profiles?.find((p: any) => p.user_id === r.user_id)?.username || "user",
-        avatar: profileAvatar(profiles?.find((p: any) => p.user_id === r.user_id)?.avatar_url, r.user_id, profiles?.find((p: any) => p.user_id === r.user_id)?.username),
+        username: mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id)),
+        avatar: profileAvatar(mediaOwnerAvatar(r, profiles?.find((p: any) => p.user_id === r.user_id)), mediaOwnerId(r), mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id))),
       }));
     },
   });
@@ -129,11 +129,11 @@ const Reels = () => {
 
     // Path A: YouTube URL → store as a reel pointing to the YouTube URL
     if (ytUrl.trim()) {
-      if (!YT_URL_RE.test(ytUrl.trim())) { toast.error("Paste a valid YouTube video or Shorts URL"); return; }
+      if (!getYouTubeId(ytUrl.trim())) { toast.error("Paste a valid YouTube video or Shorts URL"); return; }
       setUploading(true);
       try {
         const { error } = await supabase.from("reels").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           video_url: ytUrl.trim(),
           caption,
           visibility,
@@ -160,7 +160,7 @@ const Reels = () => {
         if (upErr) throw upErr;
         const { data: { publicUrl } } = supabase.storage.from("reels").getPublicUrl(path);
         const { error: insertErr } = await supabase.from("reels").insert({
-          user_id: user.id,
+          ...mediaOwnerPayload(user),
           video_url: publicUrl,
           caption,
           visibility,
@@ -196,7 +196,7 @@ const Reels = () => {
   const allReels = dbReels.map((r: any) => ({
     kind: "reel" as const,
     id: r.id,
-    userId: r.user_id,
+    userId: mediaOwnerId(r),
     username: r.username,
     avatar: r.avatar,
     video: r.video_url,
