@@ -505,8 +505,10 @@ export type Database = {
           full_name: string | null
           id: string
           instagram_username: string | null
+          is_celebrity: boolean
           is_private: boolean
           is_verified: boolean
+          celebrity_score: number
           last_seen: string | null
           onboarded_at: string | null
           phone: string | null
@@ -526,8 +528,10 @@ export type Database = {
           full_name?: string | null
           id?: string
           instagram_username?: string | null
+          is_celebrity?: boolean
           is_private?: boolean
           is_verified?: boolean
+          celebrity_score?: number
           last_seen?: string | null
           onboarded_at?: string | null
           phone?: string | null
@@ -547,8 +551,10 @@ export type Database = {
           full_name?: string | null
           id?: string
           instagram_username?: string | null
+          is_celebrity?: boolean
           is_private?: boolean
           is_verified?: boolean
+          celebrity_score?: number
           last_seen?: string | null
           onboarded_at?: string | null
           phone?: string | null

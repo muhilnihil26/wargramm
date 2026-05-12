@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban } from "lucide-react";
+import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { profileAvatar } from "@/lib/avatar";
 import { isConfiguredAdmin } from "@/lib/admin";
 
-type Tab = "ai" | "settings" | "users" | "music" | "posts" | "reels" | "verify" | "coupons" | "coins" | "notices" | "blocks";
+type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
 const QUICK_PROMPTS = [
   "Change primary color to electric purple",
@@ -116,6 +116,7 @@ const Admin = () => {
     { id: "notices" as Tab, icon: Megaphone, label: "Notices" },
     { id: "blocks" as Tab, icon: Ban, label: "Blocks" },
     { id: "users" as Tab, icon: Users, label: "Users" },
+    { id: "celebrity" as Tab, icon: Crown, label: "Stars" },
     { id: "music" as Tab, icon: Music, label: "Music" },
     { id: "posts" as Tab, icon: Image, label: "Posts" },
     { id: "reels" as Tab, icon: Film, label: "Reels" },
@@ -163,6 +164,13 @@ const Admin = () => {
               </div>
             ))}
           </div>
+        )}
+
+        {activeTab === "celebrity" && (
+          <CelebrityAdmin users={allUsers} onChanged={() => {
+            queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+            queryClient.invalidateQueries({ queryKey: ["explore-celebrities"] });
+          }} />
         )}
 
         {activeTab === "music" && (
@@ -318,6 +326,97 @@ function CoinGiveaway({ users }: { users: any[] }) {
       </div>
 
       <p className="text-[11px] text-muted-foreground">Tip: use a negative amount to deduct coins (e.g. corrections).</p>
+    </div>
+  );
+}
+
+function CelebrityAdmin({ users, onChanged }: { users: any[]; onChanged: () => void }) {
+  const [search, setSearch] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const sorted = [...users]
+    .filter((u) => !search.trim() || `${u.username || ""} ${u.full_name || ""}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => Number(!!b.is_celebrity) - Number(!!a.is_celebrity) || (b.celebrity_score || 0) - (a.celebrity_score || 0))
+    .slice(0, 80);
+
+  const setCelebrity = async (u: any, next: boolean) => {
+    setSaving(u.user_id);
+    const score = Number(u.celebrity_score || 0);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ is_celebrity: next, celebrity_score: next ? Math.max(score, 100) : 0 } as any)
+      .eq("user_id", u.user_id);
+    setSaving(null);
+    if (error) {
+      toast.error("Apply the celebrity migration first, then try again.");
+      return;
+    }
+    toast.success(next ? `@${u.username || "user"} marked as celebrity` : `@${u.username || "user"} removed from celebrities`);
+    onChanged();
+  };
+
+  const updateScore = async (u: any, score: number) => {
+    setSaving(u.user_id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ celebrity_score: Math.max(0, score), is_celebrity: score > 0 ? true : !!u.is_celebrity } as any)
+      .eq("user_id", u.user_id);
+    setSaving(null);
+    if (error) {
+      toast.error("Apply the celebrity migration first, then try again.");
+      return;
+    }
+    toast.success("Celebrity score updated");
+    onChanged();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl bg-gradient-to-br from-primary/20 to-secondary p-4">
+        <div className="flex items-center gap-2">
+          <Crown className="h-5 w-5 text-primary" />
+          <p className="text-sm font-bold text-foreground">Celebrity users</p>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">Pick high-view, high-like, or important accounts. They appear in Explore as featured celebrities.</p>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search users..."
+          className="mt-3 w-full rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none"
+        />
+      </div>
+
+      {sorted.map((u: any) => (
+        <div key={u.user_id} className="rounded-xl bg-secondary p-3">
+          <div className="flex items-center gap-3">
+            <img src={profileAvatar(u.avatar_url, u.user_id, u.username)} alt="" className="h-11 w-11 rounded-full object-cover" />
+            <div className="min-w-0 flex-1">
+              <p className="inline-flex items-center gap-1 text-sm font-semibold text-foreground">
+                {u.username || "unnamed"}
+                {u.is_celebrity && <Crown className="h-3.5 w-3.5 fill-primary text-primary" />}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">{u.full_name || "No full name"}</p>
+            </div>
+            <button
+              onClick={() => setCelebrity(u, !u.is_celebrity)}
+              disabled={saving === u.user_id}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${u.is_celebrity ? "bg-background text-foreground" : "bg-primary text-primary-foreground"}`}
+            >
+              {u.is_celebrity ? "Remove" : "Make star"}
+            </button>
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <input
+              type="number"
+              defaultValue={u.celebrity_score || 0}
+              onBlur={(e) => updateScore(u, Number(e.target.value))}
+              className="w-24 rounded-lg bg-background px-2 py-1 text-xs text-foreground outline-none"
+            />
+            <span className="text-[11px] text-muted-foreground">score, higher appears first</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -6,7 +6,7 @@ if (typeof window !== "undefined") {
   if (stored === "light") document.documentElement.classList.add("light");
 }
 
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, HashRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -130,19 +130,21 @@ function AppRoutes() {
   );
 }
 
+const Router = typeof window !== "undefined" && window.location.protocol === "file:" ? HashRouter : BrowserRouter;
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
       <IntroSplash />
-      <BrowserRouter>
+      <Router>
         <AuthProvider>
           <AppSettingsProvider>
             <AppRoutes />
           </AppSettingsProvider>
         </AuthProvider>
-      </BrowserRouter>
+      </Router>
     </TooltipProvider>
   </QueryClientProvider>
 );
