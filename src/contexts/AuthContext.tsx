@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, Dispatch, SetStateAction } from "react";
 import { User, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail, sendEmailVerification, signInWithCredential, GoogleAuthProvider, updateProfile } from "firebase/auth";
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
@@ -34,6 +34,16 @@ const withId = (user: User | null): (User & { id: string }) | null => {
   return Object.assign(user, { id: user.uid });
 };
 
+const setSignedInUser = (
+  rawUser: User | null,
+  setUser: Dispatch<SetStateAction<(User & { id: string }) | null>>,
+  setSession: Dispatch<SetStateAction<any>>,
+) => {
+  const normalized = withId(rawUser);
+  setUser(normalized);
+  setSession(normalized ? { user: normalized } : null);
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<(User & { id: string }) | null>(null);
   const [session, setSession] = useState<any>(null);
@@ -42,19 +52,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     getRedirectResult(auth)
       .then((result) => {
-        if (result?.user) setUser(withId(result.user));
+        if (result?.user) setSignedInUser(result.user, setUser, setSession);
       })
       .catch(() => {});
     if (Capacitor.isNativePlatform()) {
-      FirebaseAuthentication.getPendingAuthResult().catch(() => {});
+      FirebaseAuthentication.getPendingAuthResult()
+        .then(async (result: any) => {
+          const credential = result?.credential;
+          if (credential?.idToken || credential?.accessToken) {
+            const signedIn = await signInWithCredential(auth, GoogleAuthProvider.credential(credential.idToken, credential.accessToken));
+            setSignedInUser(signedIn.user, setUser, setSession);
+          }
+        })
+        .catch(() => {});
     }
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       const knownProfile = getKnownProfile(user?.email);
       if (user && knownProfile && user.displayName !== knownProfile.fullName) {
         updateProfile(user, { displayName: knownProfile.fullName }).catch(() => {});
       }
-      setUser(withId(user));
-      setSession(user ? { user } : null);
+      setSignedInUser(user, setUser, setSession);
       setLoading(false);
     });
 
@@ -69,10 +86,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!credential?.idToken && !credential?.accessToken) {
           throw new Error("Google did not return a sign-in token.");
         }
-        await signInWithCredential(auth, GoogleAuthProvider.credential(credential.idToken, credential.accessToken));
+        const signedIn = await signInWithCredential(auth, GoogleAuthProvider.credential(credential.idToken, credential.accessToken));
+        setSignedInUser(signedIn.user, setUser, setSession);
         return;
       }
-      await signInWithPopup(auth, googleProvider);
+      const signedIn = await signInWithPopup(auth, googleProvider);
+      setSignedInUser(signedIn.user, setUser, setSession);
     } catch (error) {
       if (Capacitor.isNativePlatform()) {
         throw error;

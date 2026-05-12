@@ -43,6 +43,8 @@ interface Message {
   created_at: string;
 }
 
+const localConversationsKey = (userId: string) => `wargram-local-conversations:${userId}`;
+
 const sortMessages = (items: Message[]) =>
   [...items].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -74,6 +76,33 @@ const mergeRemoteAndLocal = (roomId: string, remote: Message[]) => {
     ))
   ));
   return sortMessages([...local, ...remote]);
+};
+
+const readLocalConversations = (userId: string): Conversation[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localConversationsKey(userId)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const writeLocalConversations = (userId: string, items: Conversation[]) => {
+  const sorted = [...items].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  localStorage.setItem(localConversationsKey(userId), JSON.stringify(sorted.slice(0, 50)));
+};
+
+const rememberLocalConversation = (userId: string, convo: Conversation, message: Message) => {
+  const existing = readLocalConversations(userId).filter((c) => c.id !== convo.id);
+  const next: Conversation = {
+    ...convo,
+    last_message: message.content || (message.image_url ? "Photo" : ""),
+    last_message_read: true,
+    last_message_sender: message.sender_id,
+    unread_count: 0,
+    updated_at: message.created_at,
+  };
+  writeLocalConversations(userId, [next, ...existing]);
 };
 
 const Messages = () => {
@@ -292,7 +321,7 @@ const Messages = () => {
   const loadConversations = async () => {
     if (!user) return;
     if (!isUuid(user.id)) {
-      setConversations([]);
+      setConversations(readLocalConversations(user.id));
       return;
     }
     const { data: convos } = await supabase
@@ -313,7 +342,11 @@ const Messages = () => {
         unread_count: count || 0, updated_at: c.updated_at,
       };
     }));
-    setConversations(enriched);
+    const local = readLocalConversations(user.id);
+    setConversations(
+      [...local, ...enriched.filter((c) => !local.some((l) => l.id === c.id))]
+        .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+    );
   };
 
   const loadMessages = async (convoId: string) => {
@@ -384,6 +417,7 @@ const Messages = () => {
         created_at: new Date().toISOString(),
       };
       setMessages((prev) => sortMessages([...prev, localMessage]));
+      rememberLocalConversation(user.id, activeConvo, localMessage);
       setNewMessage("");
       try {
         await chatService.sendMessage(activeConvo.id, {
@@ -421,6 +455,7 @@ const Messages = () => {
           created_at: new Date().toISOString(),
         };
         persistLocalMessage(activeConvo.id, localMessage);
+        rememberLocalConversation(user.id, activeConvo, localMessage);
         setMessages((prev) => prev.map((m) => m.id === tempId ? localMessage : m));
         toast.info("Message saved here. Chat database permission is blocked.");
         return;
@@ -476,6 +511,7 @@ const Messages = () => {
         created_at: new Date().toISOString(),
       };
       persistLocalMessage(activeConvo.id, localMessage);
+      rememberLocalConversation(user.id, activeConvo, localMessage);
       setMessages((prev) => sortMessages([...prev, localMessage]));
       toast.info("Message saved here. Chat database permission is blocked.");
       setNewMessage("");
