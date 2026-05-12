@@ -34,11 +34,17 @@ export class CallService {
   }
 
   private initializeRingtone() {
-    this.ringtoneAudio = new Audio('/ringtone.wav');
+    const preference = localStorage.getItem('wargram-ringtone') || 'wargram';
+    if (preference === 'silent') {
+      this.ringtoneAudio = null;
+      return;
+    }
+    this.ringtoneAudio = new Audio(preference === 'classic' ? '/ringtone.mp3' : '/ringtone.wav');
     this.ringtoneAudio.loop = true;
   }
 
   private playRingtone() {
+    this.initializeRingtone();
     if (this.ringtoneAudio) {
       this.ringtoneAudio.play().catch(console.error);
     }

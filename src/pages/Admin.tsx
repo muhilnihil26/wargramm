@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp } from "lucide-react";
+import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp, BadgeDollarSign, ExternalLink } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { profileAvatar } from "@/lib/avatar";
 import { isConfiguredAdmin } from "@/lib/admin";
 
-type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "verify" | "coupons" | "coins" | "notices" | "blocks";
+type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
 const QUICK_PROMPTS = [
   "Change primary color to electric purple",
@@ -80,6 +80,15 @@ const Admin = () => {
     enabled: !!isAdmin,
   });
 
+  const { data: allAds = [] } = useQuery({
+    queryKey: ["admin-reel-ads"],
+    queryFn: async () => {
+      const { data } = await supabase.from("reel_ads" as any).select("*").order("created_at", { ascending: false });
+      return data || [];
+    },
+    enabled: !!isAdmin,
+  });
+
   const getSetting = (key: string) => settings.find((s: any) => s.key === key)?.value || "";
 
   const updateSetting = async (key: string, value: string) => {
@@ -94,8 +103,21 @@ const Admin = () => {
     toast.success(`Updated ${key}`);
   };
 
-  const deletePost = async (id: string) => { await supabase.from("posts").delete().eq("id", id); queryClient.invalidateQueries({ queryKey: ["admin-posts"] }); toast.success("Post deleted"); };
-  const deleteReel = async (id: string) => { await supabase.from("reels").delete().eq("id", id); queryClient.invalidateQueries({ queryKey: ["admin-reels"] }); toast.success("Reel deleted"); };
+  const deletePost = async (id: string) => {
+    const reason = prompt("Reason for removing this post/video:") || "Removed by admin";
+    const { error } = await supabase.from("posts").update({ is_removed: true, removed_reason: reason, removed_by: user!.id, removed_at: new Date().toISOString() } as any).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
+    toast.success("Post removed with reason");
+  };
+  const deleteReel = async (id: string) => {
+    const reason = prompt("Reason for removing this reel/video:") || "Removed by admin";
+    const { error } = await supabase.from("reels").update({ is_removed: true, removed_reason: reason, removed_by: user!.id, removed_at: new Date().toISOString() } as any).eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    queryClient.invalidateQueries({ queryKey: ["admin-reels"] });
+    queryClient.invalidateQueries({ queryKey: ["reels"] });
+    toast.success("Reel removed with reason");
+  };
   const deleteMusic = async (id: string) => { await supabase.from("music").delete().eq("id", id); queryClient.invalidateQueries({ queryKey: ["admin-music"] }); toast.success("Track removed"); };
 
   if (isLoading) return <div className="flex min-h-screen items-center justify-center bg-background"><p className="text-muted-foreground">Loading...</p></div>;
@@ -120,6 +142,7 @@ const Admin = () => {
     { id: "music" as Tab, icon: Music, label: "Music" },
     { id: "posts" as Tab, icon: Image, label: "Posts" },
     { id: "reels" as Tab, icon: Film, label: "Reels" },
+    { id: "ads" as Tab, icon: BadgeDollarSign, label: "Ads" },
   ];
 
   return (
@@ -199,8 +222,9 @@ const Admin = () => {
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{p.profiles?.username || "user"}</p>
                   <p className="text-xs text-muted-foreground truncate">{p.caption || "No caption"}</p>
+                  {p.is_removed && <p className="text-[11px] text-destructive truncate">Removed: {p.removed_reason || "No reason"}</p>}
                 </div>
-                <button onClick={() => deletePost(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>
+                {!p.is_removed && <button onClick={() => deletePost(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>}
               </div>
             ))}
           </div>
@@ -214,11 +238,23 @@ const Admin = () => {
                 <Film className="h-5 w-5 text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{r.caption || "No caption"}</p>
+                  {r.is_removed && <p className="text-[11px] text-destructive truncate">Removed: {r.removed_reason || "No reason"}</p>}
                 </div>
-                <button onClick={() => deleteReel(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>
+                {!r.is_removed && <button onClick={() => deleteReel(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>}
               </div>
             ))}
           </div>
+        )}
+
+        {activeTab === "ads" && (
+          <ReelAdsAdmin
+            ads={allAds}
+            adminId={user!.id}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ["admin-reel-ads"] });
+              queryClient.invalidateQueries({ queryKey: ["reel-ads"] });
+            }}
+          />
         )}
 
         {activeTab === "verify" && <VerificationReview />}
@@ -714,6 +750,8 @@ function SettingsPanel({ getSetting, updateSetting }: { getSetting: (k: string) 
     },
     { key: "app_name", label: "App name", placeholder: "WarGram", help: "Used in the document title and some headings." },
     { key: "welcome_message", label: "Welcome message", placeholder: "Welcome to WarGram", help: "Shown on the auth screen." },
+    { key: "reels_copyright_notice", label: "Reels copyright notice", placeholder: "Copyrighted or harmful videos may be removed by admin.", help: "Shown around reels and ads as the copyright warning." },
+    { key: "reel_ads_enabled", label: "Show ads in Reels", placeholder: "true", help: "Use true or false. Ads are stored in the cloud and shown between reels." },
   ];
 
   const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.key, getSetting(f.key)])));
@@ -759,6 +797,76 @@ function SettingsPanel({ getSetting, updateSetting }: { getSetting: (k: string) 
 }
 
 export default Admin;
+
+function ReelAdsAdmin({ ads, adminId, onChanged }: { ads: any[]; adminId: string; onChanged: () => void }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [targetUrl, setTargetUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const add = async () => {
+    if (!title.trim()) { toast.error("Add an ad title"); return; }
+    setSaving(true);
+    const { error } = await supabase.from("reel_ads" as any).insert({
+      title: title.trim(),
+      body: body.trim() || null,
+      image_url: imageUrl.trim() || null,
+      target_url: targetUrl.trim() || null,
+      active: true,
+      created_by: adminId,
+    });
+    setSaving(false);
+    if (error) { toast.error("Apply the ads migration first, then try again."); return; }
+    setTitle(""); setBody(""); setImageUrl(""); setTargetUrl("");
+    toast.success("Ad added");
+    onChanged();
+  };
+
+  const toggle = async (ad: any) => {
+    const { error } = await supabase.from("reel_ads" as any).update({ active: !ad.active }).eq("id", ad.id);
+    if (error) { toast.error(error.message); return; }
+    onChanged();
+  };
+
+  const remove = async (id: string) => {
+    const { error } = await supabase.from("reel_ads" as any).delete().eq("id", id);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Ad removed");
+    onChanged();
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-2xl border border-border bg-secondary/40 p-3 space-y-2">
+        <p className="text-xs font-semibold text-foreground">Add reel ad</p>
+        <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Ad title" className="w-full rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none" />
+        <textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Ad text" rows={2} className="w-full rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none" />
+        <input value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="Image URL optional" className="w-full rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none" />
+        <input value={targetUrl} onChange={(e) => setTargetUrl(e.target.value)} placeholder="Click URL optional" className="w-full rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none" />
+        <button onClick={add} disabled={saving || !title.trim()} className="w-full rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground disabled:opacity-50">
+          {saving ? "Adding..." : "Add ad"}
+        </button>
+      </div>
+      {ads.map((ad: any) => (
+        <div key={ad.id} className="rounded-xl bg-secondary p-3">
+          <div className="flex items-start gap-3">
+            {ad.image_url ? <img src={ad.image_url} alt="" className="h-14 w-14 rounded-lg object-cover" /> : <BadgeDollarSign className="mt-1 h-5 w-5 text-primary" />}
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-semibold text-foreground">{ad.title}</p>
+              {ad.body && <p className="line-clamp-2 text-xs text-muted-foreground">{ad.body}</p>}
+              <p className="mt-1 text-[10px] uppercase text-muted-foreground">{ad.active ? "active" : "inactive"}</p>
+            </div>
+            {ad.target_url && <a href={ad.target_url} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4 text-muted-foreground" /></a>}
+            <button onClick={() => toggle(ad)} className="text-xs font-semibold text-primary">{ad.active ? "Hide" : "Show"}</button>
+            <button onClick={() => remove(ad.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>
+          </div>
+        </div>
+      ))}
+      {ads.length === 0 && <p className="text-xs text-muted-foreground italic">No ads yet.</p>}
+    </div>
+  );
+}
 
 function NoticesAdmin({ adminId }: { adminId: string }) {
   const qc = useQueryClient();

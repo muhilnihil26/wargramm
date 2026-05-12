@@ -3,7 +3,6 @@ const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
 
-const DESKTOP_PORT = 41737;
 const AUTH_POPUP_HOSTS = [
   "accounts.google.com",
   "wargram-c2a79.firebaseapp.com",
@@ -11,6 +10,17 @@ const AUTH_POPUP_HOSTS = [
   "google.com",
   "gstatic.com",
 ];
+let localServer;
+let mainWindow;
+
+function logDesktopError(message) {
+  try {
+    const logPath = path.join(app.getPath("userData"), "desktop-error.log");
+    fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`);
+  } catch {
+    // Logging must never stop the app from opening.
+  }
+}
 
 function isAuthPopup(url) {
   try {
@@ -35,27 +45,33 @@ function contentType(filePath) {
 }
 
 function startLocalAppServer() {
-  const distDir = path.join(__dirname, "dist");
-  const server = http.createServer((req, res) => {
-    const requestUrl = new URL(req.url || "/", `http://localhost:${DESKTOP_PORT}`);
+  const distDir = path.resolve(__dirname, "dist");
+  localServer = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url || "/", "http://127.0.0.1");
     const decodedPath = decodeURIComponent(requestUrl.pathname);
-    const safePath = decodedPath === "/" ? "/index.html" : decodedPath;
-    let filePath = path.join(distDir, safePath);
+    const safePath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^[/\\]+/, "");
+    let filePath = path.resolve(distDir, safePath);
 
-    if (!filePath.startsWith(distDir)) {
+    if (!filePath.startsWith(`${distDir}${path.sep}`) && filePath !== distDir) {
       res.writeHead(403);
       res.end("Forbidden");
       return;
     }
 
-    if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    try {
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        filePath = path.join(distDir, "index.html");
+      }
+    } catch (error) {
+      logDesktopError(`Static file lookup failed: ${error.message}`);
       filePath = path.join(distDir, "index.html");
     }
 
     fs.readFile(filePath, (err, data) => {
       if (err) {
+        logDesktopError(`Static file read failed: ${filePath} ${err.message}`);
         res.writeHead(500);
-        res.end("Could not load Wargram");
+        res.end("<!doctype html><title>Wargram</title><body style=\"background:#0b0b0f;color:#fff;font-family:sans-serif;padding:24px\">Wargram could not load its local files.</body>");
         return;
       }
       res.writeHead(200, { "Content-Type": contentType(filePath) });
@@ -64,8 +80,14 @@ function startLocalAppServer() {
   });
 
   return new Promise((resolve) => {
-    server.listen(DESKTOP_PORT, "localhost", () => resolve(`http://localhost:${DESKTOP_PORT}`));
-    server.on("error", () => resolve("https://wargram.netlify.app"));
+    localServer.listen(0, "127.0.0.1", () => {
+      const address = localServer.address();
+      resolve(`http://127.0.0.1:${address.port}`);
+    });
+    localServer.on("error", (error) => {
+      logDesktopError(`Local server failed: ${error.message}`);
+      resolve("https://wargram.netlify.app");
+    });
   });
 }
 
@@ -92,11 +114,31 @@ async function createWindow() {
       sandbox: false,
     },
   });
+  mainWindow = win;
+  win.once("ready-to-show", () => {
+    win.show();
+  });
+  win.on("close", () => {
+    logDesktopError("Main window close requested");
+  });
+  win.on("closed", () => {
+    logDesktopError("Main window closed");
+    mainWindow = null;
+  });
 
   win.removeMenu();
   const appUrl = await startLocalAppServer();
   win.loadURL(appUrl).catch(() => {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
+  });
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    logDesktopError(`Load failed ${errorCode} ${errorDescription} ${validatedURL}`);
+  });
+  win.webContents.on("render-process-gone", (_event, details) => {
+    logDesktopError(`Renderer exited: ${details.reason}`);
+  });
+  win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
+    if (level >= 2) logDesktopError(`Console ${level}: ${message} (${sourceId}:${line})`);
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (isAuthPopup(url)) {
@@ -122,7 +164,12 @@ async function createWindow() {
 
 app.whenReady().then(createWindow);
 
+app.on("before-quit", () => {
+  logDesktopError("App before-quit");
+});
+
 app.on("window-all-closed", () => {
+  logDesktopError("All windows closed");
   if (process.platform !== "darwin") app.quit();
 });
 

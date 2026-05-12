@@ -10,6 +10,7 @@ import { ShareSheet } from "@/components/ShareSheet";
 import { MusicTrimmer } from "@/components/MusicTrimmer";
 import { rewardForReel } from "@/lib/coins";
 import { profileAvatar } from "@/lib/avatar";
+import { useAppSettings } from "@/hooks/useAppSettings";
 
 const YT_URL_RE = /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/;
 
@@ -17,6 +18,7 @@ const Reels = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { get } = useAppSettings();
   void navigate;
   const [showUpload, setShowUpload] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -80,13 +82,28 @@ const Reels = () => {
         .select("*")
         .order("created_at", { ascending: false });
       if (!data) return [];
-      const userIds = [...new Set(data.map((r: any) => r.user_id))];
+      const visibleReels = data.filter((r: any) => !r.is_removed);
+      const userIds = [...new Set(visibleReels.map((r: any) => r.user_id))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
-      return data.map((r: any) => ({
+      return visibleReels.map((r: any) => ({
         ...r,
         username: profiles?.find((p: any) => p.user_id === r.user_id)?.username || "user",
         avatar: profileAvatar(profiles?.find((p: any) => p.user_id === r.user_id)?.avatar_url, r.user_id, profiles?.find((p: any) => p.user_id === r.user_id)?.username),
       }));
+    },
+  });
+
+  const { data: reelAds = [] } = useQuery({
+    queryKey: ["reel-ads"],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("reel_ads" as any)
+        .select("*")
+        .eq("active", true)
+        .order("created_at", { ascending: false });
+      if (error) return [];
+      return data || [];
     },
   });
 
@@ -177,6 +194,7 @@ const Reels = () => {
   };
 
   const allReels = dbReels.map((r: any) => ({
+    kind: "reel" as const,
     id: r.id,
     userId: r.user_id,
     username: r.username,
@@ -189,6 +207,13 @@ const Reels = () => {
     musicEnd: r.music_end as number | null,
     lyrics: (r.lyrics as any) || null,
   }));
+  const adsEnabled = get("reel_ads_enabled", "true") !== "false";
+  const copyrightNotice = get("reels_copyright_notice", "Copyrighted or harmful videos may be removed by admin.");
+  const reelsWithAds = allReels.flatMap((reel, index) => {
+    if (!adsEnabled || reelAds.length === 0 || (index + 1) % 3 !== 0) return [reel];
+    const ad = reelAds[(Math.floor((index + 1) / 3) - 1) % reelAds.length] as any;
+    return [reel, { kind: "ad" as const, ...ad }];
+  });
 
   if (showUpload) {
     return (
@@ -299,26 +324,30 @@ const Reels = () => {
           className="snap-y snap-mandatory overflow-y-scroll touch-pan-y overscroll-contain"
           style={{ height: "100dvh", scrollSnapType: "y mandatory", WebkitOverflowScrolling: "touch" }}
         >
-          {allReels.map((reel) => (
-            <ReelItem
-              key={reel.id}
-              id={reel.id}
-              userId={reel.userId}
-              username={reel.username}
-              avatar={reel.avatar}
-              video={reel.video}
-              caption={reel.caption}
-              music={reel.music}
-              musicUrl={reel.musicUrl}
-              musicStart={(reel as any).musicStart}
-              musicEnd={(reel as any).musicEnd}
-              lyrics={(reel as any).lyrics}
-              speed={speed}
-              globalMuted={muted}
-              onShare={() => handleShare(reel)}
-              onRemix={() => handleRemix(reel)}
-              onDeleted={() => refetch()}
-            />
+          {reelsWithAds.map((item: any) => (
+            item.kind === "ad" ? (
+              <ReelAdCard key={`ad-${item.id}`} ad={item} copyrightNotice={copyrightNotice} />
+            ) : (
+              <ReelItem
+                key={item.id}
+                id={item.id}
+                userId={item.userId}
+                username={item.username}
+                avatar={item.avatar}
+                video={item.video}
+                caption={item.caption}
+                music={item.music}
+                musicUrl={item.musicUrl}
+                musicStart={(item as any).musicStart}
+                musicEnd={(item as any).musicEnd}
+                lyrics={(item as any).lyrics}
+                speed={speed}
+                globalMuted={muted}
+                onShare={() => handleShare(item)}
+                onRemix={() => handleRemix(item)}
+                onDeleted={() => refetch()}
+              />
+            )
           ))}
         </div>
       </div>
@@ -333,5 +362,29 @@ const Reels = () => {
     </div>
   );
 };
+
+function ReelAdCard({ ad, copyrightNotice }: { ad: any; copyrightNotice: string }) {
+  return (
+    <section className="relative flex w-full snap-start flex-col justify-end overflow-hidden bg-black text-white" style={{ height: "100dvh", scrollSnapAlign: "start" }}>
+      {ad.image_url ? (
+        <img src={ad.image_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-80" />
+      ) : (
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(34,197,94,.28),transparent_32%),linear-gradient(160deg,#050505,#1f2937_55%,#111827)]" />
+      )}
+      <div className="absolute inset-0 bg-gradient-to-t from-black via-black/35 to-black/20" />
+      <div className="relative z-10 p-5 pb-24">
+        <p className="mb-3 inline-flex rounded-full border border-white/30 bg-white/15 px-3 py-1 text-[11px] font-bold uppercase tracking-wide backdrop-blur">Sponsored</p>
+        <h2 className="text-2xl font-bold leading-tight">{ad.title}</h2>
+        {ad.body && <p className="mt-2 max-w-sm text-sm text-white/85">{ad.body}</p>}
+        {ad.target_url && (
+          <a href={ad.target_url} target="_blank" rel="noreferrer" className="mt-4 inline-flex rounded-full bg-white px-4 py-2 text-sm font-bold text-black">
+            Open
+          </a>
+        )}
+        <p className="mt-5 max-w-sm text-[11px] text-white/55">{copyrightNotice}</p>
+      </div>
+    </section>
+  );
+}
 
 export default Reels;

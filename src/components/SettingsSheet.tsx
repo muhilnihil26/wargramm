@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, ChevronRight, User, Bell, Lock, Palette, HelpCircle, LogOut, Shield, Info, Heart, Bookmark, Eye, Phone, KeyRound, Sun, Moon, BadgeCheck, Coins, BookOpen, FileText, Briefcase } from "lucide-react";
+import { X, ChevronRight, User, Bell, Lock, Palette, HelpCircle, LogOut, Shield, Info, Heart, Bookmark, Eye, Phone, KeyRound, Sun, Moon, BadgeCheck, Coins, BookOpen, FileText, Briefcase, Volume2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { getWebPushPreference, setWebPushPreference, getWebPushStatus } from "@/lib/webPush";
 import { isConfiguredAdmin } from "@/lib/admin";
+import { isUuid } from "@/lib/ids";
 
 interface SettingsSheetProps {
   onClose: () => void;
@@ -53,7 +54,7 @@ function PushStatusBadge() {
   return <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${m.cls}`}>{m.label}</span>;
 }
 
-type View = "main" | "password" | "phone" | "theme" | "privacy";
+type View = "main" | "password" | "phone" | "theme" | "privacy" | "ringtone";
 
 export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
   const { user, signOut } = useAuth();
@@ -100,14 +101,20 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     queryKey: ["profile-settings", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("phone, is_private, show_activity").eq("user_id", user!.id).maybeSingle();
-      return data as { phone: string | null; is_private: boolean | null; show_activity: boolean | null } | null;
+      const { data, error } = await supabase.from("profiles").select("phone, is_private, show_activity, notification_ringtone").eq("user_id", user!.id).maybeSingle();
+      if (error) {
+        const fallback = await supabase.from("profiles").select("phone, is_private, show_activity").eq("user_id", user!.id).maybeSingle();
+        return fallback.data as { phone: string | null; is_private: boolean | null; show_activity: boolean | null; notification_ringtone?: string | null } | null;
+      }
+      return data as { phone: string | null; is_private: boolean | null; show_activity: boolean | null; notification_ringtone?: string | null } | null;
     },
   });
 
   const [isPrivate, setIsPrivate] = useState(false);
   const [showActivity, setShowActivity] = useState(true);
+  const [ringtone, setRingtone] = useState("wargram");
   const [privacySaving, setPrivacySaving] = useState(false);
+  const [ringtoneSaving, setRingtoneSaving] = useState(false);
   const [pushEnabled, setPushEnabled] = useState<boolean>(getWebPushPreference());
 
   const handleTogglePush = async (next: boolean) => {
@@ -119,7 +126,11 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     if (profile?.phone) setPhone(profile.phone);
     setIsPrivate(!!profile?.is_private);
     setShowActivity(profile?.show_activity !== false);
-  }, [profile?.phone, profile?.is_private, profile?.show_activity]);
+    if (profile?.notification_ringtone) {
+      setRingtone(profile.notification_ringtone);
+      localStorage.setItem("wargram-ringtone", profile.notification_ringtone);
+    }
+  }, [profile?.phone, profile?.is_private, profile?.show_activity, profile?.notification_ringtone]);
 
   // Persist + apply theme
   useEffect(() => {
@@ -180,6 +191,21 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     toast.success("Privacy updated");
     queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });
+    setView("main");
+  };
+
+  const handleSaveRingtone = async () => {
+    if (!user) return;
+    setRingtoneSaving(true);
+    localStorage.setItem("wargram-ringtone", ringtone);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ notification_ringtone: ringtone } as any)
+      .eq("user_id", user.id);
+    setRingtoneSaving(false);
+    if (error) { toast.error("Apply the ringtone migration first, then try again."); return; }
+    toast.success("Ringtone saved");
+    queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
     setView("main");
   };
 
@@ -263,6 +289,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
 
             <Section title="App and media">
               <Row icon={Palette} label="Theme" hint={theme === "light" ? "Light" : "Dark"} onClick={() => setView("theme")} />
+              <Row icon={Volume2} label="Ringtone" hint={ringtone === "silent" ? "Silent" : ringtone === "classic" ? "Classic" : "Wargram"} onClick={() => setView("ringtone")} />
             </Section>
 
             <Section title="More info and support">
@@ -387,6 +414,35 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
 
               <button onClick={handleSavePrivacy} disabled={privacySaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
                 {privacySaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {view === "ringtone" && (
+          <>
+            <Header title="Ringtone" back />
+            <div className="p-4 space-y-2">
+              {[
+                { id: "wargram", label: "Wargram", hint: "Default app ringtone" },
+                { id: "classic", label: "Classic", hint: "Short classic alert" },
+                { id: "silent", label: "Silent", hint: "No in-app ringing sound" },
+              ].map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => setRingtone(option.id)}
+                  className={`flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left ${ringtone === option.id ? "border-primary bg-secondary" : "border-border"}`}
+                >
+                  <Volume2 className="h-5 w-5 text-foreground" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                    <p className="text-xs text-muted-foreground">{option.hint}</p>
+                  </div>
+                  {ringtone === option.id && <span className="text-xs text-primary font-bold">Active</span>}
+                </button>
+              ))}
+              <button onClick={handleSaveRingtone} disabled={ringtoneSaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
+                {ringtoneSaving ? "Saving..." : "Save ringtone"}
               </button>
             </div>
           </>
