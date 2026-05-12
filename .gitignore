@@ -15,7 +15,11 @@ dist-ssr
 output
 android-apk-output
 desktop-output*
+windows-output*
 .electron-cache
+installer/*.zip
+installer/*.copy
+installer/*.sed
 .desktop-app-asar-*
 *.local
 .env

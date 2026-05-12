@@ -114,19 +114,24 @@
     "appId": "com.wargram.desktop",
     "productName": "Wargram",
     "directories": {
-      "output": "desktop-output"
+      "output": "windows-output"
     },
     "files": [
       "dist/**/*",
       "electron.cjs",
-      "public/favicon.ico"
+      "public/favicon.ico",
+      "!node_modules/**/*",
+      "!android/**/*",
+      "!desktop-output/**/*",
+      "!.cache/**/*"
     ],
     "win": {
       "target": [
         "nsis",
         "portable"
       ],
-      "icon": "public/favicon.ico"
+      "icon": "public/favicon.ico",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
