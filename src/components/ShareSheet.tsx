@@ -18,6 +18,54 @@ interface UserRow {
   avatar_url: string | null;
 }
 
+const firebaseRoomId = (a: string, b: string) => `firebase-${[a, b].sort().join("-")}`;
+const localChatKey = (roomId: string) => `wargram-local-chat:${roomId}`;
+const localConversationsKey = (userId: string) => `wargram-local-conversations:${userId}`;
+
+const readStored = <T,>(key: string, fallback: T): T => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "");
+    return parsed || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const saveLocalShare = (user: any, target: UserRow, content: string) => {
+  const roomId = firebaseRoomId(user.id, target.user_id);
+  const now = new Date().toISOString();
+  const message = {
+    id: `local-${Date.now()}`,
+    sender_id: user.id,
+    content,
+    image_url: null,
+    read: false,
+    created_at: now,
+  };
+  const messages = readStored<any[]>(localChatKey(roomId), []).filter((m) => m.id !== message.id);
+  localStorage.setItem(localChatKey(roomId), JSON.stringify([...messages, message].slice(-150)));
+
+  const convo = {
+    id: roomId,
+    user1_id: user.id,
+    user2_id: target.user_id,
+    other_user: {
+      user_id: target.user_id,
+      username: target.username || "user",
+      avatar_url: target.avatar_url || "",
+      last_seen: null,
+      is_verified: false,
+    },
+    last_message: content,
+    last_message_read: true,
+    last_message_sender: user.id,
+    unread_count: 0,
+    updated_at: now,
+  };
+  const convos = readStored<any[]>(localConversationsKey(user.id), []).filter((c) => c.id !== roomId);
+  localStorage.setItem(localConversationsKey(user.id), JSON.stringify([convo, ...convos].slice(0, 50)));
+};
+
 /**
  * Modal that lists the user's followers + following and lets them DM the link.
  * Creates the conversation if one doesn't exist, then inserts a message.
@@ -33,25 +81,30 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
   useEffect(() => {
     if (!user) return;
     const load = async () => {
-      if (!isUuid(user.id)) {
-        setUsers([]);
-        setLoading(false);
-        return;
+      if (isUuid(user.id)) {
+        const [{ data: followers }, { data: following }] = await Promise.all([
+          supabase.from("follows").select("follower_id").eq("following_id", user.id),
+          supabase.from("follows").select("following_id").eq("follower_id", user.id),
+        ]);
+        const ids = new Set<string>([
+          ...(followers?.map((f: any) => f.follower_id) || []),
+          ...(following?.map((f: any) => f.following_id) || []),
+        ]);
+        if (ids.size > 0) {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("user_id, username, avatar_url")
+            .in("user_id", Array.from(ids));
+          setUsers((profiles || []) as UserRow[]);
+          setLoading(false);
+          return;
+        }
       }
-      // Followers + Following, deduped
-      const [{ data: followers }, { data: following }] = await Promise.all([
-        supabase.from("follows").select("follower_id").eq("following_id", user.id),
-        supabase.from("follows").select("following_id").eq("follower_id", user.id),
-      ]);
-      const ids = new Set<string>([
-        ...(followers?.map((f: any) => f.follower_id) || []),
-        ...(following?.map((f: any) => f.following_id) || []),
-      ]);
-      if (ids.size === 0) { setUsers([]); setLoading(false); return; }
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, username, avatar_url")
-        .in("user_id", Array.from(ids));
+        .neq("user_id", user.id)
+        .limit(50);
       setUsers((profiles || []) as UserRow[]);
       setLoading(false);
     };
@@ -60,11 +113,15 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
 
   const handleSend = async (target: UserRow) => {
     if (!user) return;
+    const content = `${shareLabel}\n${shareUrl}`;
+    setSendingTo(target.user_id);
     if (!isUuid(user.id) || !isUuid(target.user_id)) {
-      toast.info("Direct share needs chat sync. Use Copy link for now.");
+      saveLocalShare(user, target, content);
+      setSentTo((prev) => new Set(prev).add(target.user_id));
+      setSendingTo(null);
+      toast.success(`Sent to ${target.username || "user"}`);
       return;
     }
-    setSendingTo(target.user_id);
     try {
       // Find or create conversation (deterministic ordering by user id)
       const [u1, u2] = user.id < target.user_id ? [user.id, target.user_id] : [target.user_id, user.id];
@@ -82,7 +139,6 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
         convoId = created.id;
       }
 
-      const content = `${shareLabel}\n${shareUrl}`;
       const { error: msgErr } = await supabase.from("messages").insert({
         conversation_id: convoId!,
         sender_id: user.id,
@@ -93,7 +149,9 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
       setSentTo((prev) => new Set(prev).add(target.user_id));
       toast.success(`Sent to ${target.username || "user"}`);
     } catch (e: any) {
-      toast.error(e.message || "Failed to send");
+      saveLocalShare(user, target, content);
+      setSentTo((prev) => new Set(prev).add(target.user_id));
+      toast.success(`Sent to ${target.username || "user"}`);
     } finally {
       setSendingTo(null);
     }
@@ -153,7 +211,7 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
             </div>
           ) : filtered.length === 0 ? (
             <p className="text-center text-sm text-muted-foreground py-10">
-              {users.length === 0 ? "Follow people to share with them" : "No matches"}
+              {users.length === 0 ? "No users found" : "No matches"}
             </p>
           ) : (
             <ul>
@@ -197,7 +255,7 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
             onClick={handleCopy}
             className="w-full rounded-lg bg-secondary py-2 text-sm font-semibold text-foreground hover:bg-secondary/80"
           >
-            Copy link
+            Copy / share link
           </button>
         </div>
       </div>

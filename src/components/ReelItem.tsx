@@ -49,8 +49,11 @@ export function ReelItem({
   const [showComments, setShowComments] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [localLiked, setLocalLiked] = useState(false);
-  const [localLikeOffset, setLocalLikeOffset] = useState(0);
+  const localLikeKey = user ? `wargram-local-like:reel:${user.id}:${id}` : "";
+  const localSaveKey = user ? `wargram-local-save:reel:${user.id}:${id}` : "";
+  const [localLiked, setLocalLiked] = useState(!!localLikeKey && localStorage.getItem(localLikeKey) === "true");
+  const [localLikeOffset, setLocalLikeOffset] = useState(localLiked ? 1 : 0);
+  const [localSaved, setLocalSaved] = useState(!!localSaveKey && localStorage.getItem(localSaveKey) === "true");
   const isImage = video.includes("unsplash") || /\.(jpg|jpeg|png|webp)(\?|$)/i.test(video);
   const youTubeId = getYouTubeId(video);
   const isYouTube = !!youTubeId;
@@ -84,22 +87,28 @@ export function ReelItem({
 
   const toggleLike = async () => {
     if (!user || isMock) {
-      setLocalLiked((v) => !v);
-      setLocalLikeOffset((n) => n + (localLiked ? -1 : 1));
+      const next = !localLiked;
+      setLocalLiked(next);
+      if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
+      setLocalLikeOffset((n) => n + (next ? 1 : -1));
       return;
     }
     if (!isUuid(user.id)) {
-      setLocalLiked((v) => !v);
-      setLocalLikeOffset((n) => n + (localLiked ? -1 : 1));
+      const next = !localLiked;
+      setLocalLiked(next);
+      if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
+      setLocalLikeOffset((n) => n + (next ? 1 : -1));
       return;
     }
     if (likeInfo?.liked || localLiked) {
       setLocalLiked(false);
+      if (localLikeKey) localStorage.setItem(localLikeKey, "false");
       setLocalLikeOffset((n) => n - 1);
       const { error } = await supabase.from("reel_likes").delete().eq("reel_id", id).eq("user_id", user.id);
       if (error) toast.info("Like saved on this device.");
     } else {
       setLocalLiked(true);
+      if (localLikeKey) localStorage.setItem(localLikeKey, "true");
       setLocalLikeOffset((n) => n + 1);
       const { error } = await supabase.from("reel_likes").insert({ reel_id: id, user_id: user.id } as any);
       if (error) toast.info("Like saved on this device.");
@@ -216,8 +225,8 @@ export function ReelItem({
           <Repeat2 className="h-7 w-7 text-white" strokeWidth={1.5} />
           <span className="text-xs text-white">Remix</span>
         </button>
-        <button onClick={() => { setSaved((s) => !s); toast.success(saved ? "Unsaved" : "Saved"); }}>
-          <Bookmark className={`h-7 w-7 ${saved ? "fill-white text-white" : "text-white"}`} strokeWidth={1.5} />
+        <button onClick={() => { const next = !localSaved; setLocalSaved(next); if (localSaveKey) localStorage.setItem(localSaveKey, String(next)); setSaved(next); toast.success(next ? "Saved" : "Unsaved"); }}>
+          <Bookmark className={`h-7 w-7 ${localSaved || saved ? "fill-white text-white" : "text-white"}`} strokeWidth={1.5} />
         </button>
         <button onClick={() => setShowMore(true)}>
           <MoreHorizontal className="h-7 w-7 text-white" strokeWidth={1.5} />

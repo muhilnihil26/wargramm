@@ -21,6 +21,20 @@ interface CommentsSheetProps {
   onCommentAdded?: () => void;
 }
 
+const localCommentsKey = (postId: string) => `wargram-local-comments:post:${postId}`;
+const readLocalComments = (postId: string): Comment[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localCommentsKey(postId)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+const saveLocalComment = (postId: string, comment: Comment) => {
+  const next = [...readLocalComments(postId).filter((c) => c.id !== comment.id), comment];
+  localStorage.setItem(localCommentsKey(postId), JSON.stringify(next.slice(-100)));
+};
+
 export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: CommentsSheetProps) {
   const { user } = useAuth();
   const [comments, setComments] = useState<Comment[]>([]);
@@ -48,12 +62,11 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       .select("user_id, username, avatar_url")
       .in("user_id", userIds);
 
-    setComments(
-      data.map((c) => ({
+    const remote = data.map((c) => ({
         ...c,
         profile: profiles?.find((p) => p.user_id === c.user_id) as any,
-      }))
-    );
+      }));
+    setComments([...remote, ...readLocalComments(postId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
     setLoading(false);
   };
 
@@ -71,6 +84,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       },
     };
     if (!isUuid(user.id)) {
+      saveLocalComment(postId, localComment);
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
       onCommentAdded?.();
@@ -96,6 +110,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       onCommentAdded?.();
       loadComments();
     } else {
+      saveLocalComment(postId, localComment);
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
       onCommentAdded?.();

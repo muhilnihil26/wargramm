@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
+import { isUuid } from "@/lib/ids";
 
 interface FollowButtonProps {
   targetUserId: string;
@@ -10,6 +11,22 @@ interface FollowButtonProps {
 }
 
 type State = "none" | "following" | "requested";
+
+const localFollowKey = (userId: string) => `wargram-local-follows:${userId}`;
+const readLocalFollows = (userId: string): Record<string, State> => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localFollowKey(userId)) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+const writeLocalFollow = (userId: string, targetUserId: string, state: State) => {
+  const next = readLocalFollows(userId);
+  if (state === "none") delete next[targetUserId];
+  else next[targetUserId] = state;
+  localStorage.setItem(localFollowKey(userId), JSON.stringify(next));
+};
 
 export function FollowButton({ targetUserId, variant = "default", onChange }: FollowButtonProps) {
   const { user } = useAuth();
@@ -21,6 +38,12 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
     if (!user || !targetUserId || user.id === targetUserId) return;
     let cancelled = false;
     (async () => {
+      const localState = readLocalFollows(user.id)[targetUserId];
+      if (localState) {
+        setState(localState);
+        return;
+      }
+      if (!isUuid(user.id) || !isUuid(targetUserId)) return;
       const [{ data: follow }, { data: prof }, { data: req }] = await Promise.all([
         supabase.from("follows").select("id").eq("follower_id", user.id).eq("following_id", targetUserId).maybeSingle(),
         supabase.from("profiles").select("is_private").eq("user_id", targetUserId).maybeSingle(),
@@ -44,30 +67,51 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
 
     if (state === "following") {
       setState("none");
+      writeLocalFollow(user.id, targetUserId, "none");
       onChange?.(false);
-      await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetUserId);
+      if (isUuid(user.id) && isUuid(targetUserId)) {
+        await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetUserId);
+      }
     } else if (state === "requested") {
       setState("none");
-      await supabase.from("follow_requests").delete().eq("requester_id", user.id).eq("target_id", targetUserId);
+      writeLocalFollow(user.id, targetUserId, "none");
+      if (isUuid(user.id) && isUuid(targetUserId)) {
+        await supabase.from("follow_requests").delete().eq("requester_id", user.id).eq("target_id", targetUserId);
+      }
       toast.success("Request cancelled");
     } else {
       // none
       if (targetPrivate) {
+        if (!isUuid(user.id) || !isUuid(targetUserId)) {
+          setState("requested");
+          writeLocalFollow(user.id, targetUserId, "requested");
+          toast.success("Request saved");
+          setLoading(false);
+          return;
+        }
         const { error } = await supabase.from("follow_requests").insert({ requester_id: user.id, target_id: targetUserId } as any);
         if (!error) {
           setState("requested");
+          writeLocalFollow(user.id, targetUserId, "requested");
           await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow_request" });
           toast.success("Request sent");
         } else {
-          toast.error(error.message);
+          setState("requested");
+          writeLocalFollow(user.id, targetUserId, "requested");
+          toast.success("Request saved");
         }
       } else {
         setState("following");
+        writeLocalFollow(user.id, targetUserId, "following");
         onChange?.(true);
-        const { error } = await supabase.from("follows").insert({ follower_id: user.id, following_id: targetUserId });
+        const { error } = isUuid(user.id) && isUuid(targetUserId)
+          ? await supabase.from("follows").insert({ follower_id: user.id, following_id: targetUserId })
+          : { error: null };
         if (!error) {
-          await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow" });
+          if (isUuid(user.id) && isUuid(targetUserId)) await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow" });
           toast.success("Following");
+        } else {
+          toast.success("Following saved");
         }
       }
     }

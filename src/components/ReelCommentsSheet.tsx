@@ -20,6 +20,20 @@ interface Props {
   onCommentAdded?: () => void;
 }
 
+const localCommentsKey = (reelId: string) => `wargram-local-comments:reel:${reelId}`;
+const readLocalComments = (reelId: string): ReelComment[] => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(localCommentsKey(reelId)) || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+const saveLocalComment = (reelId: string, comment: ReelComment) => {
+  const next = [...readLocalComments(reelId).filter((c) => c.id !== comment.id), comment];
+  localStorage.setItem(localCommentsKey(reelId), JSON.stringify(next.slice(-100)));
+};
+
 export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
   const { user } = useAuth();
   const [comments, setComments] = useState<ReelComment[]>([]);
@@ -37,7 +51,8 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
     const userIds = [...new Set(data.map((c) => c.user_id))];
     const { data: profiles } = await supabase
       .from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
-    setComments(data.map((c) => ({ ...c, profile: profiles?.find((p) => p.user_id === c.user_id) as any })));
+    const remote = data.map((c) => ({ ...c, profile: profiles?.find((p) => p.user_id === c.user_id) as any }));
+    setComments([...remote, ...readLocalComments(reelId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
     setLoading(false);
   };
 
@@ -67,6 +82,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
       },
     };
     if (!isUuid(user.id)) {
+      saveLocalComment(reelId, localComment);
       setComments((prev) => [...prev, localComment]);
       setText("");
       onCommentAdded?.();
@@ -76,6 +92,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
     const { error } = await supabase.from("reel_comments").insert({ reel_id: reelId, user_id: user.id, content: text.trim() } as any);
     if (!error) { setText(""); onCommentAdded?.(); load(); }
     else {
+      saveLocalComment(reelId, localComment);
       setComments((prev) => [...prev, localComment]);
       setText("");
       onCommentAdded?.();

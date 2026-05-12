@@ -40,14 +40,21 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [liked, setLiked] = useState(initialLiked || false);
-  const [saved, setSaved] = useState(false);
+  const localLikeKey = id && user ? `wargram-local-like:post:${user.id}:${id}` : "";
+  const localSaveKey = id && user ? `wargram-local-save:post:${user.id}:${id}` : "";
+  const [liked, setLiked] = useState(initialLiked || (!!localLikeKey && localStorage.getItem(localLikeKey) === "true"));
+  const [saved, setSaved] = useState(!!localSaveKey && localStorage.getItem(localSaveKey) === "true");
   const [showMore, setShowMore] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const isOwner = !!user && !!userId && user.id === userId && !!id;
 
   const toggleSave = async () => {
-    if (!user || !id || !isUuid(user.id)) { setSaved(!saved); return; }
+    if (!user || !id || !isUuid(user.id)) {
+      const next = !saved;
+      setSaved(next);
+      if (localSaveKey) localStorage.setItem(localSaveKey, String(next));
+      return;
+    }
     if (saved) {
       setSaved(false);
       await supabase.from("saved_posts").delete().eq("user_id", user.id).eq("post_id", id);
@@ -64,18 +71,23 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
 
   const toggleLike = async (forceLike = false) => {
     if (!user || !id || !isUuid(user.id)) {
-      setLiked(!liked);
-      setLikeCount((c) => (liked ? c - 1 : c + 1));
+      const next = forceLike || !liked;
+      if (next === liked) return;
+      setLiked(next);
+      if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
+      setLikeCount((c) => (next ? c + 1 : c - 1));
       return;
     }
 
     if (liked && !forceLike) {
       setLiked(false);
+      if (localLikeKey) localStorage.setItem(localLikeKey, "false");
       setLikeCount((c) => c - 1);
       const { error } = await supabase.from("likes").delete().eq("user_id", user.id).eq("post_id", id);
       if (error) toast.info("Like saved on this device.");
     } else if (!liked) {
       setLiked(true);
+      if (localLikeKey) localStorage.setItem(localLikeKey, "true");
       setLikeCount((c) => c + 1);
       const { error } = await supabase.from("likes").insert({ user_id: user.id, post_id: id });
       if (error) toast.info("Like saved on this device.");
