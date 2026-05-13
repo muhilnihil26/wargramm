@@ -6,6 +6,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { toast } from "sonner";
 import { logCloudAction } from "@/lib/cloudActions";
+import { readFirebaseComments, saveFirebaseComment } from "@/lib/firebaseUserData";
 
 interface ReelComment {
   id: string;
@@ -53,7 +54,8 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
     const { data: profiles } = await supabase
       .from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
     const remote = data.map((c) => ({ ...c, profile: profiles?.find((p) => p.user_id === c.user_id) as any }));
-    setComments([...remote, ...readLocalComments(reelId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    const firebaseRemote = await readFirebaseComments("reel", reelId).catch(() => []);
+    setComments([...remote, ...firebaseRemote, ...readLocalComments(reelId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
     setLoading(false);
   };
 
@@ -83,6 +85,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
       },
     };
     if (!isUuid(user.id)) {
+      await saveFirebaseComment("reel", reelId, localComment).catch(() => {});
       saveLocalComment(reelId, localComment);
       setComments((prev) => [...prev, localComment]);
       setText("");
@@ -95,6 +98,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
     if (!error) { setText(""); onCommentAdded?.(); await logCloudAction(user, "reel_comment", { reel_id: reelId }).catch(() => {}); load(); }
     else {
       saveLocalComment(reelId, localComment);
+      await saveFirebaseComment("reel", reelId, localComment).catch(() => {});
       setComments((prev) => [...prev, localComment]);
       setText("");
       onCommentAdded?.();

@@ -1,4 +1,4 @@
-import { get, ref, remove, set } from "firebase/database";
+import { get, push, ref, remove, set } from "firebase/database";
 import { database } from "@/integrations/firebase/config";
 
 export async function saveFirebasePostBookmark(userId: string, postId: string, saved: boolean) {
@@ -15,6 +15,31 @@ export async function readFirebasePostBookmarks(userId: string): Promise<string[
   const value = snapshot.val();
   if (!value) return [];
   return Object.keys(value);
+}
+
+export async function saveFirebaseLike(kind: "post" | "reel", itemId: string, userId: string, liked: boolean) {
+  const path = `${kind}Likes/${itemId}/${userId}`;
+  if (liked) await set(ref(database, path), { user_id: userId, liked_at: Date.now() });
+  else await remove(ref(database, path));
+}
+
+export async function saveFirebaseReelBookmark(userId: string, reelId: string, saved: boolean) {
+  const path = `bookmarks/${userId}/reels/${reelId}`;
+  if (saved) await set(ref(database, path), { reel_id: reelId, saved_at: Date.now() });
+  else await remove(ref(database, path));
+}
+
+export async function saveFirebaseComment(kind: "post" | "reel", itemId: string, comment: Record<string, any>) {
+  const itemRef = push(ref(database, `${kind}Comments/${itemId}`));
+  await set(itemRef, { ...comment, id: itemRef.key, created_at_ms: Date.now() });
+  return { ...comment, id: itemRef.key };
+}
+
+export async function readFirebaseComments(kind: "post" | "reel", itemId: string) {
+  const snapshot = await get(ref(database, `${kind}Comments/${itemId}`));
+  const value = snapshot.val();
+  if (!value) return [];
+  return Object.values(value) as any[];
 }
 
 export async function readFirebasePublicProfile(uid: string) {

@@ -9,6 +9,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
+import { logCloudAction } from "@/lib/cloudActions";
 
 type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
@@ -124,6 +125,7 @@ const Admin = () => {
     }
     queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
     queryClient.invalidateQueries({ queryKey: ["app-settings"] });
+    await logCloudAction(user, "admin_setting_update", { key, value }).catch(() => {});
     toast.success(`Updated ${key}`);
   };
 
@@ -638,6 +640,7 @@ function VerificationReview() {
 type ChatMsg = { role: "user" | "assistant"; content: string; applied?: { key: string; value: string }[] };
 
 function AiEditor({ settings, onApplied }: { settings: any[]; onApplied: () => void }) {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMsg[]>([
     { role: "assistant", content: "Hi! I'm your admin assistant. Tell me what you want to change — colors, copy, feature flags, anything. I'll apply it instantly." },
   ]);
@@ -669,6 +672,14 @@ function AiEditor({ settings, onApplied }: { settings: any[]; onApplied: () => v
         if (applied.length > 0) { onApplied(); toast.success(`Applied ${applied.length} change(s)`); }
       }
     } catch (e: any) {
+      const applied = await applyBuiltInAdminAI(text, user).catch(() => []);
+      if (applied.length > 0) {
+        onApplied();
+        toast.success(`Applied ${applied.length} change(s)`);
+        setMessages((p) => [...p, { role: "assistant", content: "I applied these changes with the built-in admin AI fallback.", applied }]);
+        setSending(false);
+        return;
+      }
       toast.error(e.message || "Failed to reach AI");
       setMessages((p) => [...p, { role: "assistant", content: "⚠️ Could not reach the AI. Try again." }]);
     } finally { setSending(false); }
@@ -736,6 +747,41 @@ function AiEditor({ settings, onApplied }: { settings: any[]; onApplied: () => v
       )}
     </div>
   );
+}
+
+async function applyBuiltInAdminAI(text: string, user: any) {
+  const lower = text.toLowerCase();
+  const changes: { key: string; value: string }[] = [];
+  const add = (key: string, value: string) => changes.push({ key, value });
+  const quoted = text.match(/['"]([^'"]+)['"]/)?.[1];
+  const number = text.match(/\b(\d{1,5})\b/)?.[1];
+  const hex = text.match(/#[0-9a-fA-F]{6}\b/)?.[0];
+
+  if (lower.includes("enable reels") || lower.includes("reels true")) add("feature_reels", "true");
+  if (lower.includes("disable reels") || lower.includes("reels false")) add("feature_reels", "false");
+  if (lower.includes("enable stories") || lower.includes("stories true")) add("feature_stories", "true");
+  if (lower.includes("disable stories") || lower.includes("stories false")) add("feature_stories", "false");
+  if (lower.includes("enable messages") || lower.includes("enable dms")) add("feature_dms", "true");
+  if (lower.includes("disable messages") || lower.includes("disable dms")) add("feature_dms", "false");
+  if (lower.includes("enable youtube")) add("feature_youtube", "true");
+  if (lower.includes("disable youtube")) add("feature_youtube", "false");
+  if (lower.includes("enable ads")) add("reel_ads_enabled", "true");
+  if (lower.includes("disable ads")) add("reel_ads_enabled", "false");
+  if ((lower.includes("app name") || lower.includes("rename")) && quoted) add("app_name", quoted);
+  if (lower.includes("welcome") && quoted) add("welcome_message", quoted);
+  if (lower.includes("copyright") && quoted) add("reels_copyright_notice", quoted);
+  if ((lower.includes("primary color") || lower.includes("theme color")) && hex) add("primary_color", hex);
+  if (lower.includes("feed") && lower.includes("size") && number) add("feed_page_size", number);
+  if (lower.includes("caption") && lower.includes("length") && number) add("max_caption_length", number);
+
+  if (changes.length === 0) return [];
+  for (const change of changes) {
+    const { data: existing } = await supabase.from("admin_settings").select("id").eq("key", change.key).maybeSingle();
+    if (existing?.id) await supabase.from("admin_settings").update({ value: change.value } as any).eq("id", existing.id);
+    else await supabase.from("admin_settings").insert({ key: change.key, value: change.value } as any);
+  }
+  await logCloudAction(user, "admin_ai_settings_update", { changes }).catch(() => {});
+  return changes;
 }
 
 function AddMusicForm({ adminId, onAdded }: { adminId: string; onAdded: () => void }) {

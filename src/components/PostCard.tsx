@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
-import { saveFirebasePostBookmark } from "@/lib/firebaseUserData";
+import { saveFirebaseLike, saveFirebasePostBookmark } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
 
 import { VerifiedBadge } from "./VerifiedBadge";
@@ -86,6 +86,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       setLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLikeCount((c) => (next ? c + 1 : c - 1));
+      await saveFirebaseLike("post", id, user.id, next).catch(() => {});
       await logCloudAction(user, next ? "post_like" : "post_unlike", { post_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }

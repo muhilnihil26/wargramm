@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 import { logCloudAction } from "@/lib/cloudActions";
+import { saveFirebaseLike, saveFirebaseReelBookmark } from "@/lib/firebaseUserData";
 
 interface ReelItemProps {
   id: string;
@@ -88,6 +89,7 @@ export function ReelItem({
       setLocalLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLocalLikeOffset((n) => n + (next ? 1 : -1));
+      if (user) await saveFirebaseLike("reel", id, user.id, next).catch(() => {});
       await logCloudAction(user, next ? "reel_like" : "reel_unlike", { reel_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }
@@ -96,6 +98,7 @@ export function ReelItem({
       setLocalLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLocalLikeOffset((n) => n + (next ? 1 : -1));
+      await saveFirebaseLike("reel", id, user.id, next).catch(() => {});
       await logCloudAction(user, next ? "reel_like" : "reel_unlike", { reel_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }
@@ -227,7 +230,7 @@ export function ReelItem({
           <Repeat2 className="h-7 w-7 text-white" strokeWidth={1.5} />
           <span className="text-xs text-white">Remix</span>
         </button>
-        <button onClick={() => { const next = !localSaved; setLocalSaved(next); if (localSaveKey) localStorage.setItem(localSaveKey, String(next)); setSaved(next); if (user) logCloudAction(user, next ? "reel_save" : "reel_unsave", { reel_id: id, owner_id: userId || null }).catch(() => {}); toast.success(next ? "Saved" : "Unsaved"); }}>
+        <button onClick={() => { const next = !localSaved; setLocalSaved(next); if (localSaveKey) localStorage.setItem(localSaveKey, String(next)); setSaved(next); if (user) { saveFirebaseReelBookmark(user.id, id, next).catch(() => {}); logCloudAction(user, next ? "reel_save" : "reel_unsave", { reel_id: id, owner_id: userId || null }).catch(() => {}); } toast.success(next ? "Saved" : "Unsaved"); }}>
           <Bookmark className={`h-7 w-7 ${localSaved || saved ? "fill-white text-white" : "text-white"}`} strokeWidth={1.5} />
         </button>
         <button onClick={() => setShowMore(true)}>

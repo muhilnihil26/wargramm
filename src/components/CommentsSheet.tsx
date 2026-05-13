@@ -6,6 +6,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { toast } from "sonner";
 import { logCloudAction } from "@/lib/cloudActions";
+import { readFirebaseComments, saveFirebaseComment } from "@/lib/firebaseUserData";
 
 interface Comment {
   id: string;
@@ -67,7 +68,8 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
         ...c,
         profile: profiles?.find((p) => p.user_id === c.user_id) as any,
       }));
-    setComments([...remote, ...readLocalComments(postId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    const firebaseRemote = await readFirebaseComments("post", postId).catch(() => []);
+    setComments([...remote, ...firebaseRemote, ...readLocalComments(postId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
     setLoading(false);
   };
 
@@ -85,6 +87,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       },
     };
     if (!isUuid(user.id)) {
+      await saveFirebaseComment("post", postId, localComment).catch(() => {});
       saveLocalComment(postId, localComment);
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
@@ -114,6 +117,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       loadComments();
     } else {
       saveLocalComment(postId, localComment);
+      await saveFirebaseComment("post", postId, localComment).catch(() => {});
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
       onCommentAdded?.();
