@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getBalance, spendCoins, buildReferralLink } from "@/lib/coins";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { isUuid } from "@/lib/ids";
 
 const Coins = () => {
   const { user } = useAuth();
@@ -36,7 +37,7 @@ const Coins = () => {
 
   const { data: redemptions = [] } = useQuery({
     queryKey: ["my-redemptions", user?.id],
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
     queryFn: async () => {
       const { data } = await supabase.from("coupon_redemptions").select("*, coupons(*)").eq("user_id", user!.id).order("created_at", { ascending: false });
       return data || [];
@@ -45,7 +46,7 @@ const Coins = () => {
 
   const { data: txs = [] } = useQuery({
     queryKey: ["coin-tx", user?.id],
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
     queryFn: async () => {
       const { data } = await supabase.from("coin_transactions").select("*").eq("user_id", user!.id).order("created_at", { ascending: false }).limit(30);
       return data || [];
@@ -54,7 +55,7 @@ const Coins = () => {
 
   const { data: referralStats } = useQuery({
     queryKey: ["referral-stats", user?.id],
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
     queryFn: async () => {
       const { count } = await supabase.from("profiles").select("user_id", { count: "exact", head: true }).eq("referred_by", user!.id);
       return { invited: count || 0 };
@@ -65,6 +66,10 @@ const Coins = () => {
 
   const redeem = async (c: any) => {
     if (!user) return;
+    if (!isUuid(user.id)) {
+      toast.error("Coins need your cloud profile to sync first. Try again after profile sync.");
+      return;
+    }
     setRedeeming(c.id);
     const ok = await spendCoins(user.id, c.cost_coins, "coupon_redeem", { coupon_id: c.id });
     if (ok) {

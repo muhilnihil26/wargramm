@@ -13,6 +13,8 @@ import { profileAvatar } from "@/lib/avatar";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName, mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { getYouTubeId } from "@/lib/youtube";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile } from "@/lib/localProfile";
 
 const Reels = () => {
   const { user } = useAuth();
@@ -63,6 +65,7 @@ const Reels = () => {
     queryKey: ["reels-profile-privacy", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase.from("profiles").select("is_private").eq("user_id", user!.id).maybeSingle();
       return data as { is_private?: boolean } | null;
     },

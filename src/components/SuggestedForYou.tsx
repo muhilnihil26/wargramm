@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { FollowButton } from "./FollowButton";
 import { VerifiedBadge } from "./VerifiedBadge";
 import { profileAvatar } from "@/lib/avatar";
+import { isUuid } from "@/lib/ids";
 
 export function SuggestedForYou() {
   const { user } = useAuth();
@@ -15,10 +16,12 @@ export function SuggestedForYou() {
     enabled: !!user,
     queryFn: async () => {
       if (!user) return [];
-      const [{ data: existing }, { data: requested }] = await Promise.all([
-        supabase.from("follows").select("following_id").eq("follower_id", user.id),
-        supabase.from("follow_requests").select("target_id").eq("requester_id", user.id),
-      ]);
+      const [{ data: existing }, { data: requested }] = isUuid(user.id)
+        ? await Promise.all([
+            supabase.from("follows").select("following_id").eq("follower_id", user.id),
+            supabase.from("follow_requests").select("target_id").eq("requester_id", user.id),
+          ])
+        : [{ data: [] }, { data: [] }];
       const excludeIds = new Set([
         user.id,
         ...((existing || []) as any[]).map((f) => f.following_id),

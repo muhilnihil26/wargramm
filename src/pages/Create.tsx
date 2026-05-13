@@ -10,6 +10,8 @@ import { rewardForPost } from "@/lib/coins";
 import { CameraCapture } from "@/components/CameraCapture";
 import { MediaEditor } from "@/components/MediaEditor";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile } from "@/lib/localProfile";
 
 type Visibility = "public" | "followers" | "only_me";
 
@@ -34,6 +36,7 @@ const Create = () => {
     queryKey: ["create-profile-privacy", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase.from("profiles").select("is_private").eq("user_id", user!.id).maybeSingle();
       return data as { is_private?: boolean } | null;
     },

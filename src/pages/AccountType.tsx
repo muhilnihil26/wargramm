@@ -5,6 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile, updateLocalProfile } from "@/lib/localProfile";
 
 type AccountType = "personal" | "business" | "developer";
 
@@ -25,6 +27,7 @@ const AccountType = () => {
     queryKey: ["account-type", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase.from("profiles").select("account_type").eq("user_id", user!.id).maybeSingle();
       return data as { account_type: AccountType } | null;
     },
@@ -37,6 +40,15 @@ const AccountType = () => {
   const save = async () => {
     if (!user) return;
     setSaving(true);
+    if (!isUuid(user.id)) {
+      updateLocalProfile(user, { account_type: selected });
+      setSaving(false);
+      toast.success(`Switched to ${selected} account`);
+      qc.invalidateQueries({ queryKey: ["account-type"] });
+      qc.invalidateQueries({ queryKey: ["profile"] });
+      navigate(-1);
+      return;
+    }
     const { error } = await supabase.from("profiles").update({ account_type: selected } as any).eq("user_id", user.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }

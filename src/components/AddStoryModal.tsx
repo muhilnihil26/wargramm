@@ -5,6 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile } from "@/lib/localProfile";
 
 interface AddStoryModalProps {
   onClose: () => void;
@@ -29,6 +31,7 @@ export function AddStoryModal({ onClose }: AddStoryModalProps) {
     queryKey: ["story-profile-privacy", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase.from("profiles").select("is_private").eq("user_id", user!.id).maybeSingle();
       return data as { is_private?: boolean } | null;
     },

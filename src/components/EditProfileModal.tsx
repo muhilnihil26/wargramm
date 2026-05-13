@@ -5,6 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { profileAvatar } from "@/lib/avatar";
+import { isUuid } from "@/lib/ids";
+import { updateLocalProfile } from "@/lib/localProfile";
 
 interface EditProfileModalProps {
   profile: {
@@ -45,6 +47,14 @@ export function EditProfileModal({ profile, onClose }: EditProfileModalProps) {
 
     try {
       let avatarUrl = profile.avatar_url;
+
+      if (!isUuid(user.id)) {
+        updateLocalProfile(user, { username, full_name: fullName, bio, website, avatar_url: avatarPreview || avatarUrl || "", instagram_username: instagram.replace(/^@/, "").trim() || null });
+        queryClient.invalidateQueries({ queryKey: ["profile"] });
+        toast.success("Profile updated!");
+        onClose();
+        return;
+      }
 
       if (avatarFile) {
         const ext = avatarFile.name.split(".").pop();

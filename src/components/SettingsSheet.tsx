@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { getWebPushPreference, setWebPushPreference, getWebPushStatus } from "@/lib/webPush";
 import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
+import { readLocalProfile, updateLocalProfile } from "@/lib/localProfile";
 
 interface SettingsSheetProps {
   onClose: () => void;
@@ -92,6 +93,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     queryKey: ["my-verification-row", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase.from("profiles").select("is_verified, verification_status").eq("user_id", user!.id).maybeSingle();
       return data as { is_verified: boolean | null; verification_status: string | null } | null;
     },
@@ -101,6 +103,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     queryKey: ["profile-settings", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data, error } = await supabase.from("profiles").select("phone, is_private, show_activity, notification_ringtone").eq("user_id", user!.id).maybeSingle();
       if (error) {
         const fallback = await supabase.from("profiles").select("phone, is_private, show_activity").eq("user_id", user!.id).maybeSingle();
@@ -170,6 +173,14 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
       return;
     }
     setPhoneSaving(true);
+    if (!isUuid(user.id)) {
+      updateLocalProfile(user, { phone: cleaned || null });
+      setPhoneSaving(false);
+      toast.success("Phone saved");
+      queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
+      setView("main");
+      return;
+    }
     const { error } = await supabase.from("profiles").update({ phone: cleaned || null } as any).eq("user_id", user.id);
     setPhoneSaving(false);
     if (error) { toast.error(error.message); return; }
@@ -182,6 +193,15 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
   const handleSavePrivacy = async () => {
     if (!user) return;
     setPrivacySaving(true);
+    if (!isUuid(user.id)) {
+      updateLocalProfile(user, { is_private: isPrivate, show_activity: showActivity });
+      setPrivacySaving(false);
+      toast.success("Privacy updated");
+      queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+      setView("main");
+      return;
+    }
     const { error } = await supabase
       .from("profiles")
       .update({ is_private: isPrivate, show_activity: showActivity } as any)
@@ -198,6 +218,14 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     if (!user) return;
     setRingtoneSaving(true);
     localStorage.setItem("wargram-ringtone", ringtone);
+    if (!isUuid(user.id)) {
+      updateLocalProfile(user, { notification_ringtone: ringtone });
+      setRingtoneSaving(false);
+      toast.success("Ringtone saved");
+      queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
+      setView("main");
+      return;
+    }
     const { error } = await supabase
       .from("profiles")
       .update({ notification_ringtone: ringtone } as any)

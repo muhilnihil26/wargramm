@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { isUuid } from "@/lib/ids";
 
 function getYouTubeId(url: string): string | null {
   const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
@@ -49,8 +50,8 @@ export function MusicPlayer() {
       const { error } = await supabase.from("music").insert({
         youtube_url: youtubeUrl.trim(),
         title,
-        added_by: user.id,
-      });
+        added_by: isUuid(user.id) ? user.id : null,
+      } as any);
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ["music"] });

@@ -99,7 +99,13 @@ const Profile = () => {
     staleTime: 5_000,
     queryFn: async () => {
       if (!user) return { posts: 0, followers: 0, following: 0 };
-      if (!user || !isUuid(user.id)) return { posts: 0, followers: 0, following: 0 };
+      if (!isUuid(user.id)) {
+        const [{ count: postCount }, { count: reelCount }] = await Promise.all([
+          supabase.from("posts").select("*", { count: "exact", head: true }).eq("firebase_uid", user.id),
+          supabase.from("reels").select("*", { count: "exact", head: true }).eq("firebase_uid", user.id),
+        ]);
+        return { posts: (postCount || 0) + (reelCount || 0), followers: 0, following: 0 };
+      }
       const [{ count: postCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", user.id),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),

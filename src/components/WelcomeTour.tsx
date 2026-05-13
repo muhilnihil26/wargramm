@@ -4,6 +4,8 @@ import { Sparkles, Film, Camera, Coins, MessageCircle, Shield, ArrowRight, Arrow
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile, updateLocalProfile } from "@/lib/localProfile";
 
 const SLIDES = [
   { icon: Sparkles, title: "Welcome to WarGram", body: "Share moments, earn coins, and unlock real brand deals — all in one place." },
@@ -35,6 +37,18 @@ export function WelcomeTour() {
     (async () => {
       const localKey = `wargram-tour-complete:${user.uid}`;
       if (localStorage.getItem(localKey) === "true") return;
+
+      if (!isUuid(user.id)) {
+        const localProfile = readLocalProfile(user);
+        if (localProfile?.onboarded_at) {
+          localStorage.setItem(localKey, "true");
+          return;
+        }
+        const createdAt = user.metadata.creationTime ? new Date(user.metadata.creationTime).getTime() : Date.now();
+        const lastSignInAt = user.metadata.lastSignInTime ? new Date(user.metadata.lastSignInTime).getTime() : createdAt;
+        if (Math.abs(lastSignInAt - createdAt) < 5 * 60 * 1000) setPhase("slides");
+        return;
+      }
 
       const { data } = await supabase
         .from("profiles")
@@ -77,6 +91,11 @@ export function WelcomeTour() {
     setPhase("done");
     if (user) {
       localStorage.setItem(`wargram-tour-complete:${user.uid}`, "true");
+      if (!isUuid(user.id)) {
+        updateLocalProfile(user, { onboarded_at: new Date().toISOString() });
+        navigate("/", { replace: true });
+        return;
+      }
       await supabase.from("profiles").update({ onboarded_at: new Date().toISOString() } as any).eq("user_id", user.id);
     }
     navigate("/", { replace: true });

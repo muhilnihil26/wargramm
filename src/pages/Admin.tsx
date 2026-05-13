@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { profileAvatar } from "@/lib/avatar";
 import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
+import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 
 type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
@@ -49,8 +50,28 @@ const Admin = () => {
   const { data: allUsers = [] } = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
-      return data || [];
+      const [{ data: profiles }, { data: posts }, { data: reels }, { data: stories }] = await Promise.all([
+        supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+        supabase.from("posts").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
+        supabase.from("reels").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
+        supabase.from("stories").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
+      ]);
+      const byId = new Map<string, any>();
+      (profiles || []).forEach((p: any) => byId.set(p.user_id, p));
+      [...(posts || []), ...(reels || []), ...(stories || [])].forEach((row: any) => {
+        if (!row.firebase_uid || byId.has(row.firebase_uid)) return;
+        byId.set(row.firebase_uid, {
+          id: row.firebase_uid,
+          user_id: row.firebase_uid,
+          firebase_uid: row.firebase_uid,
+          username: row.firebase_display_name || row.firebase_email?.split("@")[0] || "firebase_user",
+          full_name: row.firebase_email || "",
+          avatar_url: row.firebase_photo_url || "",
+          created_at: row.created_at,
+          is_firebase_user: true,
+        });
+      });
+      return [...byId.values()];
     },
     enabled: !!isAdmin,
   });
@@ -67,7 +88,7 @@ const Admin = () => {
   const { data: allPosts = [] } = useQuery({
     queryKey: ["admin-posts"],
     queryFn: async () => {
-      const { data } = await supabase.from("posts").select("*, profiles!posts_user_id_fkey(username)").order("created_at", { ascending: false });
+      const { data } = await supabase.from("posts").select("*").order("created_at", { ascending: false });
       return data || [];
     },
     enabled: !!isAdmin,
@@ -155,17 +176,20 @@ const Admin = () => {
         <h1 className="text-lg font-bold text-foreground">Admin Panel</h1>
       </header>
 
-      <div className="flex border-b border-border overflow-x-auto scrollbar-hide">
-        {tabs.map((t) => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`min-w-[80px] flex flex-col items-center gap-1 py-3 px-2 text-xs font-medium transition-colors ${activeTab === t.id ? "text-primary border-b-2 border-primary" : "text-muted-foreground"}`}>
-            <t.icon className="h-5 w-5" strokeWidth={1.5} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <div className="mx-auto grid w-full max-w-6xl gap-4 p-3 lg:grid-cols-[220px_1fr]">
+        <aside className="overflow-x-auto rounded-2xl border border-border bg-secondary/35 p-2 lg:sticky lg:top-16 lg:h-[calc(100vh-5rem)] lg:overflow-y-auto">
+          <div className="flex gap-1 lg:flex-col">
+            {tabs.map((t) => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                className={`min-w-[84px] rounded-xl flex items-center justify-center lg:justify-start gap-2 py-2.5 px-3 text-xs font-semibold transition-colors ${activeTab === t.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-background"}`}>
+                <t.icon className="h-4 w-4" strokeWidth={1.8} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </aside>
 
-      <div className="mx-auto max-w-lg p-4 space-y-4">
+      <main className="min-w-0 space-y-4">
         {activeTab === "ai" && (
           <AiEditor settings={settings} onApplied={() => {
             queryClient.invalidateQueries({ queryKey: ["admin-settings"] });
@@ -223,7 +247,7 @@ const Admin = () => {
               <div key={p.id} className="flex items-center gap-3 rounded-xl bg-secondary p-3">
                 <img src={p.image_url} alt="" className="h-14 w-14 rounded-lg object-cover" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-foreground truncate">{p.profiles?.username || "user"}</p>
+                  <p className="text-sm font-semibold text-foreground truncate">{mediaOwnerName(p)}</p>
                   <p className="text-xs text-muted-foreground truncate">{p.caption || "No caption"}</p>
                   {p.is_removed && <p className="text-[11px] text-destructive truncate">Removed: {p.removed_reason || "No reason"}</p>}
                 </div>
@@ -269,6 +293,7 @@ const Admin = () => {
         {activeTab === "notices" && <NoticesAdmin adminId={user!.id} />}
 
         {activeTab === "blocks" && <BlocksAdmin users={allUsers} adminId={user!.id} /> }
+      </main>
       </div>
     </div>
   );
@@ -283,6 +308,7 @@ function CoinGiveaway({ users }: { users: any[] }) {
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const cloudUsers = users.filter((u) => isUuid(u.user_id));
   const filtered = !search.trim()
     ? []
     : users
@@ -292,6 +318,7 @@ function CoinGiveaway({ users }: { users: any[] }) {
   const grant = async () => {
     if (!amount || amount === 0) { toast.error("Amount must be non-zero"); return; }
     if (targetMode === "user" && !selectedUser) { toast.error("Pick a user"); return; }
+    if (targetMode === "user" && !isUuid(selectedUser.user_id)) { toast.error("Coins need a Supabase UUID profile. Firebase-only users can use local rewards after profile sync."); return; }
     if (targetMode === "all" && !confirm(`Give ${amount} coins to ALL users?`)) return;
     setLoading(true);
     try {
@@ -316,7 +343,7 @@ function CoinGiveaway({ users }: { users: any[] }) {
           <Gift className="h-5 w-5 text-primary" />
           <p className="text-sm font-bold text-foreground">Coin giveaway</p>
         </div>
-        <p className="text-xs text-muted-foreground">Reward your community from the cloud. Coins stay with users on every device.</p>
+        <p className="text-xs text-muted-foreground">Reward cloud profiles. Firebase-only users are shown, but coins require profile sync.</p>
 
         <div className="grid grid-cols-2 gap-2">
           <button onClick={() => setTargetMode("all")} className={`rounded-lg py-2 text-xs font-semibold ${targetMode === "all" ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}>
@@ -365,7 +392,7 @@ function CoinGiveaway({ users }: { users: any[] }) {
         </button>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">Tip: use a negative amount to deduct coins (e.g. corrections).</p>
+      <p className="text-[11px] text-muted-foreground">Tip: use a negative amount to deduct coins. Cloud coin users: {cloudUsers.length}/{users.length}.</p>
     </div>
   );
 }
@@ -380,6 +407,7 @@ function CelebrityAdmin({ users, onChanged }: { users: any[]; onChanged: () => v
     .slice(0, 80);
 
   const setCelebrity = async (u: any, next: boolean) => {
+    if (!isUuid(u.user_id)) { toast.error("Celebrity badges need a synced Supabase profile for this Firebase user."); return; }
     setSaving(u.user_id);
     const score = Number(u.celebrity_score || 0);
     const { error } = await supabase
@@ -396,6 +424,7 @@ function CelebrityAdmin({ users, onChanged }: { users: any[]; onChanged: () => v
   };
 
   const updateScore = async (u: any, score: number) => {
+    if (!isUuid(u.user_id)) { toast.error("Celebrity score needs a synced Supabase profile."); return; }
     setSaving(u.user_id);
     const { error } = await supabase
       .from("profiles")
@@ -756,6 +785,12 @@ function SettingsPanel({ getSetting, updateSetting }: { getSetting: (k: string) 
     { key: "welcome_message", label: "Welcome message", placeholder: "Welcome to WarGram", help: "Shown on the auth screen." },
     { key: "reels_copyright_notice", label: "Reels copyright notice", placeholder: "Copyrighted or harmful videos may be removed by admin.", help: "Shown around reels and ads as the copyright warning." },
     { key: "reel_ads_enabled", label: "Show ads in Reels", placeholder: "true", help: "Use true or false. Ads are stored in the cloud and shown between reels." },
+    { key: "feature_reels", label: "Reels enabled", placeholder: "true", help: "Use true or false. Controls the Reels tab and route." },
+    { key: "feature_stories", label: "Stories enabled", placeholder: "true", help: "Use true or false. Controls story creation and viewing." },
+    { key: "feature_dms", label: "Messages enabled", placeholder: "true", help: "Use true or false. Controls direct messages." },
+    { key: "feature_youtube", label: "YouTube library enabled", placeholder: "true", help: "Use true or false. Controls the YouTube library page." },
+    { key: "feed_page_size", label: "Feed page size", placeholder: "30", help: "Number of posts to load in feed." },
+    { key: "max_caption_length", label: "Max caption length", placeholder: "2200", help: "Maximum caption length for posts and reels." },
   ];
 
   const [draft, setDraft] = useState<Record<string, string>>(() => Object.fromEntries(fields.map((f) => [f.key, getSetting(f.key)])));
@@ -946,6 +981,7 @@ function BlocksAdmin({ users, adminId }: { users: any[]; adminId: string }) {
   });
   const block = async () => {
     if (!target) return;
+    if (!isUuid(target.user_id)) { toast.error("Blocking needs a synced Supabase profile for this Firebase user."); return; }
     const { error } = await supabase.from("user_blocks").insert({ user_id: target.user_id, reason: reason || null, blocked_by: isUuid(adminId) ? adminId : null, blocked_by_firebase_uid: adminId } as any);
     if (error) { toast.error(error.message); return; }
     toast.success(`Blocked @${target.username}`);

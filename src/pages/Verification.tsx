@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { isUuid } from "@/lib/ids";
+import { readLocalProfile } from "@/lib/localProfile";
 
 const CATEGORIES = ["Business", "Developer", "Creator", "Public figure", "Brand", "Journalist", "Athlete", "Other"];
 
@@ -22,6 +24,7 @@ const Verification = () => {
     queryKey: ["my-verification-profile", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
       const { data } = await supabase
         .from("profiles")
         .select("is_verified, verification_status, full_name")
@@ -33,7 +36,7 @@ const Verification = () => {
 
   const { data: latestRequest } = useQuery({
     queryKey: ["my-latest-verification", user?.id],
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
     queryFn: async () => {
       const { data } = await supabase
         .from("verification_requests")
@@ -56,6 +59,10 @@ const Verification = () => {
 
   const handleSubmit = async () => {
     if (!user) return;
+    if (!isUuid(user.id)) {
+      toast.error("Verification needs a synced cloud profile first.");
+      return;
+    }
     if (!fullName.trim() || !docFile) { toast.error("Full name and ID document are required"); return; }
     setSubmitting(true);
     try {

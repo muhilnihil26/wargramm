@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { profileAvatar } from "@/lib/avatar";
+import { isUuid } from "@/lib/ids";
 
 interface Notification {
   id: string;
@@ -33,7 +34,7 @@ const Notifications = () => {
 
   const { data: requests = [] } = useQuery({
     queryKey: ["follow-requests-incoming", user?.id],
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
     queryFn: async () => {
       const { data } = await supabase
         .from("follow_requests")
@@ -51,7 +52,7 @@ const Notifications = () => {
   const { data: notifications = [] } = useQuery({
     queryKey: ["notifications", user?.id],
     queryFn: async () => {
-      if (!user) return [];
+      if (!user || !isUuid(user.id)) return [];
       const { data } = await supabase
         .from("notifications")
         .select("*")
@@ -77,11 +78,11 @@ const Notifications = () => {
         post: posts?.find((p) => p.id === n.post_id),
       })) as Notification[];
     },
-    enabled: !!user,
+    enabled: !!user && isUuid(user.id),
   });
 
   useEffect(() => {
-    if (!user || notifications.length === 0) return;
+    if (!user || !isUuid(user.id) || notifications.length === 0) return;
     const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
     if (unreadIds.length > 0) {
       supabase.from("notifications").update({ read: true }).in("id", unreadIds).then(() => {});
@@ -89,7 +90,7 @@ const Notifications = () => {
   }, [notifications, user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !isUuid(user.id)) return;
     const channel = supabase
       .channel("notifications-realtime")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${user.id}` }, () => {
@@ -103,7 +104,7 @@ const Notifications = () => {
   }, [user, queryClient]);
 
   const acceptRequest = async (req: FollowRequest) => {
-    if (!user) return;
+    if (!user || !isUuid(user.id)) return;
     try {
       // Insert into follows. The follower is the requester, the followed is the current user.
       const { error } = await supabase.rpc("accept_follow_request" as any, { _request_id: req.id });
