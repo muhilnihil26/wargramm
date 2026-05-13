@@ -37,7 +37,41 @@ const Reels = () => {
   const [showSpeedMenu, setShowSpeedMenu] = useState(false);
   const [shareReel, setShareReel] = useState<any | null>(null);
   const [visibility, setVisibility] = useState<"public" | "followers" | "only_me">("public");
+  const [localVersion, setLocalVersion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const localReelsKey = user ? `wargram-local-reels:${user.id}` : "";
+
+  const readLocalReels = () => {
+    if (!localReelsKey) return [];
+    try {
+      return JSON.parse(localStorage.getItem(localReelsKey) || "[]");
+    } catch {
+      return [];
+    }
+  };
+
+  const saveLocalReel = (videoUrl: string, source: "youtube" | "file") => {
+    if (!user || !videoUrl) return;
+    const localProfile = readLocalProfile(user);
+    const localReel = {
+      id: `local-${Date.now()}`,
+      firebase_uid: user.id,
+      firebase_email: user.email || null,
+      firebase_display_name: localProfile?.username || user.displayName || user.email?.split("@")[0] || "user",
+      firebase_photo_url: localProfile?.avatar_url || user.photoURL || null,
+      video_url: videoUrl,
+      caption,
+      visibility,
+      music_url: source === "file" ? musicUrl || null : null,
+      music_title: musicTitle || null,
+      music_start: source === "file" && musicUrl ? musicStart : 0,
+      music_end: source === "file" && musicUrl ? musicEnd : 60,
+      created_at: new Date().toISOString(),
+      local_only: true,
+    };
+    localStorage.setItem(localReelsKey, JSON.stringify([localReel, ...readLocalReels()].slice(0, 50)));
+    setLocalVersion((v) => v + 1);
+  };
 
   // Receive remix request from home feed: open uploader with audio pre-filled
   useEffect(() => {
@@ -76,7 +110,7 @@ const Reels = () => {
   }, [profile?.is_private]);
 
   const { data: dbReels = [], refetch } = useQuery({
-    queryKey: ["reels"],
+    queryKey: ["reels", localVersion, user?.id],
     staleTime: 5_000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
@@ -84,15 +118,17 @@ const Reels = () => {
         .from("reels")
         .select("*")
         .order("created_at", { ascending: false });
-      if (!data) return [];
+      const localReels = readLocalReels();
+      if (!data) return localReels;
       const visibleReels = data.filter((r: any) => !r.is_removed);
       const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
-      return visibleReels.map((r: any) => ({
+      const cloudReels = visibleReels.map((r: any) => ({
         ...r,
         username: mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id)),
         avatar: profileAvatar(mediaOwnerAvatar(r, profiles?.find((p: any) => p.user_id === r.user_id)), mediaOwnerId(r), mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id))),
       }));
+      return [...localReels, ...cloudReels];
     },
   });
 
@@ -149,7 +185,8 @@ const Reels = () => {
         await rewardForReel(user.id);
         toast.success("YouTube reel added!");
       } catch (err: any) {
-        toast.error(err.message);
+        saveLocalReel(ytUrl.trim(), "youtube");
+        toast.info("Reel saved on this device. Apply the Supabase migrations to sync it in cloud.");
       } finally {
         setUploading(false);
       }
@@ -176,7 +213,8 @@ const Reels = () => {
         await rewardForReel(user.id);
         toast.success("Reel uploaded!");
       } catch (err: any) {
-        toast.error(err.message);
+        saveLocalReel(preview || "", "file");
+        toast.info("Reel saved on this device. Apply the Supabase migrations to sync it in cloud.");
       } finally {
         setUploading(false);
       }
