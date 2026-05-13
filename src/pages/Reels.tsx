@@ -47,7 +47,13 @@ const Reels = () => {
   const readLocalReels = () => {
     if (!localReelsKey) return [];
     try {
-      return JSON.parse(localStorage.getItem(localReelsKey) || "[]");
+      const rows = JSON.parse(localStorage.getItem(localReelsKey) || "[]");
+      const valid = rows.filter((row: any) => {
+        const url = reelVideoUrl(row);
+        return !!url && !url.startsWith("blob:");
+      });
+      if (valid.length !== rows.length) localStorage.setItem(localReelsKey, JSON.stringify(valid));
+      return valid;
     } catch {
       return [];
     }
@@ -55,8 +61,12 @@ const Reels = () => {
 
   const saveLocalReel = (videoUrl: string, source: "youtube" | "file") => {
     if (!user || !videoUrl) return;
+    if (videoUrl.startsWith("blob:")) {
+      toast.error("This reel could not sync because the upload URL is temporary. Try uploading again.");
+      return;
+    }
     const localProfile = readLocalProfile(user);
-    const localReel = {
+      const localReel = {
       id: `local-${Date.now()}`,
       firebase_uid: user.id,
       firebase_email: user.email || null,
@@ -130,10 +140,14 @@ const Reels = () => {
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       const cloudReels = visibleReels.map((r: any) => ({
         ...r,
+        video_url: reelVideoUrl(r),
         username: mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id)),
         avatar: profileAvatar(mediaOwnerAvatar(r, profiles?.find((p: any) => p.user_id === r.user_id)), mediaOwnerId(r), mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id))),
       }));
-      return [...localReels, ...cloudReels];
+      return [...localReels, ...cloudReels].filter((r: any) => {
+        const url = reelVideoUrl(r);
+        return !!url && !url.startsWith("blob:");
+      });
     },
   });
 
@@ -242,9 +256,9 @@ const Reels = () => {
         await logCloudAction(user, "reel_create", { source: "file", visibility, firebase_fallback: !!insertErr }).catch(() => {});
         toast.success(insertErr ? "Reel media uploaded and saved to Firebase cloud" : "Reel uploaded!");
       } catch (err: any) {
-        saveLocalReel(preview || "", "file");
+        saveLocalReel("", "file");
         await logCloudAction(user, "reel_create", { source: "file", visibility, local_fallback: true }).catch(() => {});
-        toast.info("Reel saved on this device. Apply the Supabase migrations to sync it in cloud.");
+        toast.error("Reel upload failed. Pick the video again and retry.");
       } finally {
         setUploading(false);
       }
@@ -277,7 +291,11 @@ const Reels = () => {
     musicStart: r.music_start as number | null,
     musicEnd: r.music_end as number | null,
     lyrics: (r.lyrics as any) || null,
-  }));
+}));
+
+function reelVideoUrl(row: any): string {
+  return String(row?.video_url || row?.url || row?.youtube_url || row?.media_url || row?.image_url || "").trim();
+}
   const adsEnabled = get("reel_ads_enabled", "true") !== "false";
   const copyrightNotice = get("reels_copyright_notice", "Copyrighted or harmful videos may be removed by admin.");
   const reelsWithAds = allReels.flatMap((reel, index) => {

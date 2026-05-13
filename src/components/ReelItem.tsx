@@ -53,8 +53,9 @@ export function ReelItem({
   const [localLiked, setLocalLiked] = useState(!!localLikeKey && localStorage.getItem(localLikeKey) === "true");
   const [localLikeOffset, setLocalLikeOffset] = useState(localLiked ? 1 : 0);
   const [localSaved, setLocalSaved] = useState(!!localSaveKey && localStorage.getItem(localSaveKey) === "true");
-  const isImage = video.includes("unsplash") || /\.(jpg|jpeg|png|webp)(\?|$)/i.test(video);
-  const youTubeId = getYouTubeId(video);
+  const mediaUrl = (video || "").trim();
+  const isImage = mediaUrl.includes("unsplash") || /\.(jpg|jpeg|png|webp)(\?|$)/i.test(mediaUrl);
+  const youTubeId = getYouTubeId(mediaUrl);
   const isYouTube = !!youTubeId;
   const isMock = id.startsWith("mock-");
   const isSupabaseReel = isUuid(id);
@@ -176,39 +177,44 @@ export function ReelItem({
 
   useEffect(() => {
     setMediaFailed(false);
-  }, [video]);
+  }, [mediaUrl]);
 
   const likes = Math.max(0, (likeInfo?.count ?? 0) + localLikeOffset);
   const liked = localLiked || (likeInfo?.liked ?? false);
 
   return (
     <div ref={containerRef} className="relative snap-start bg-black w-full" style={{ height: "100dvh", scrollSnapAlign: "start" }}>
-      {!video || mediaFailed ? (
+      {!mediaUrl || mediaFailed ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black px-6 text-center text-white">
           <Play className="h-12 w-12 text-white/80" />
           <p className="text-sm font-semibold">Media could not load</p>
-          <p className="text-xs text-white/70">This reel may be private, moved, or blocked by the video source.</p>
+          <p className="text-xs text-white/70">This reel upload is missing or the video source blocked playback.</p>
         </div>
       ) : isYouTube ? (
         <div className="absolute inset-0 bg-black">
           {isVisible ? (
             <iframe
-              src={`${youtubeEmbedUrl(video, { autoplay: true, mute: globalMuted, loop: true })}&controls=1`}
+              src={`${youtubeEmbedUrl(mediaUrl, { autoplay: true, mute: globalMuted, loop: true })}&controls=1`}
               title="YouTube"
               className="h-full w-full"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
               allowFullScreen
             />
           ) : (
-            <img src={youtubeThumbnail(video) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" onError={() => setMediaFailed(true)} />
+            <div className="relative h-full w-full bg-black">
+              <img src={youtubeThumbnail(mediaUrl) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <Play className="h-14 w-14 fill-white/80 text-white/80" />
+              </div>
+            </div>
           )}
         </div>
       ) : isImage ? (
-        <img src={video} alt="" className="h-full w-full object-cover" onError={() => setMediaFailed(true)} />
+        <img src={mediaUrl} alt="" className="h-full w-full object-cover" onError={() => setMediaFailed(true)} />
       ) : (
         <video
           ref={videoRef}
-          src={video}
+          src={mediaUrl}
           className="h-full w-full object-cover"
           loop
           playsInline
