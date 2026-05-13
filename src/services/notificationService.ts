@@ -1,8 +1,9 @@
 import { getMessaging, getToken, onMessage } from 'firebase/messaging';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { Capacitor } from '@capacitor/core';
-import { auth } from '@/integrations/firebase/config';
+import { auth, database } from '@/integrations/firebase/config';
 import { supabase } from '@/integrations/supabase/client';
+import { ref, set } from 'firebase/database';
 
 export class NotificationService {
   private messaging = getMessaging();
@@ -11,11 +12,18 @@ export class NotificationService {
     const user = auth.currentUser;
     if (!user || !token) return;
 
+    const payload = {
+      user_id: user.uid,
+      token,
+      platform,
+      updated_at: Date.now(),
+    };
+    await set(ref(database, `pushTokens/${user.uid}/${platform}`), payload).catch(console.error);
     await supabase.rpc('register_push_token' as any, {
       _user_id: user.uid,
       _token: token,
       _platform: platform,
-    } as any);
+    } as any).catch(console.error);
   }
 
   async initialize() {

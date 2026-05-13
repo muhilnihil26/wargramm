@@ -1,0 +1,103 @@
+{
+  "rules": {
+    ".read": "auth != null",
+    "profiles": {
+      ".read": "auth != null",
+      "$uid": { ".write": "auth != null && auth.uid == $uid" }
+    },
+    "userActions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "lastActions": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "follows": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "followers": {
+      "$targetUid": {
+        ".read": "auth != null",
+        "$followerUid": { ".write": "auth != null && auth.uid == $followerUid" }
+      }
+    },
+    "followRequests": {
+      "$targetUid": {
+        ".read": "auth != null && (auth.uid == $targetUid || data.child(auth.uid).exists())",
+        "$requesterUid": { ".write": "auth != null && (auth.uid == $requesterUid || auth.uid == $targetUid)" }
+      }
+    },
+    "bookmarks": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "postLikes": {
+      "$postId": {
+        ".read": "auth != null",
+        "$uid": { ".write": "auth != null && auth.uid == $uid" }
+      }
+    },
+    "reelLikes": {
+      "$reelId": {
+        ".read": "auth != null",
+        "$uid": { ".write": "auth != null && auth.uid == $uid" }
+      }
+    },
+    "postComments": {
+      "$postId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "reelComments": {
+      "$reelId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "messages": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    "userRooms": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "calls": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "pushTokens": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+    "notificationsDemo": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    }
+  }
+}

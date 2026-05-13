@@ -1,4 +1,4 @@
-import { ref, push, onValue, off, update, remove } from 'firebase/database';
+import { ref, push, onValue, off, update } from 'firebase/database';
 import { database } from '../integrations/firebase/config';
 
 export interface CallData {
@@ -29,8 +29,27 @@ export class CallService {
   };
 
   constructor() {
-    this.peerConnection = new RTCPeerConnection(this.iceServers);
+    this.peerConnection = this.createPeerConnection();
     this.initializeRingtone();
+  }
+
+  private createPeerConnection() {
+    const connection = new RTCPeerConnection(this.iceServers);
+    connection.onicecandidate = (event) => {
+      if (event.candidate) this.sendIceCandidate(event.candidate.toJSON()).catch(console.error);
+    };
+    connection.ontrack = (event) => {
+      if (!this.remoteStream) this.remoteStream = new MediaStream();
+      event.streams[0].getTracks().forEach(track => this.remoteStream!.addTrack(track));
+    };
+    return connection;
+  }
+
+  private ensurePeerConnection() {
+    if (!this.peerConnection || this.peerConnection.signalingState === 'closed') {
+      this.peerConnection = this.createPeerConnection();
+    }
+    return this.peerConnection;
   }
 
   private initializeRingtone() {
@@ -61,6 +80,8 @@ export class CallService {
   async startCall(calleeId: string, type: 'audio' | 'video', callerId: string): Promise<string> {
     const callRef = push(this.callsRef);
     const callId = callRef.key!;
+    this.currentCallId = callId;
+    this.ensurePeerConnection();
 
     const callData: CallData = {
       id: callId,
@@ -78,8 +99,8 @@ export class CallService {
     await this.setupLocalMedia(type);
 
     // Create offer
-    const offer = await this.peerConnection!.createOffer();
-    await this.peerConnection!.setLocalDescription(offer);
+    const offer = await this.ensurePeerConnection().createOffer();
+    await this.ensurePeerConnection().setLocalDescription(offer);
 
     // Update call with offer
     await update(callRef, {
@@ -96,6 +117,8 @@ export class CallService {
   // Answer call
   async answerCall(callId: string, calleeId: string) {
     const callRef = ref(database, `calls/${callId}`);
+    this.currentCallId = callId;
+    this.ensurePeerConnection();
 
     // Get call data
     onValue(callRef, async (snapshot) => {
@@ -107,11 +130,11 @@ export class CallService {
 
       // Set remote description
       if (callData.offer) {
-        await this.peerConnection!.setRemoteDescription(new RTCSessionDescription(callData.offer));
+        await this.ensurePeerConnection().setRemoteDescription(new RTCSessionDescription(callData.offer));
 
         // Create answer
-        const answer = await this.peerConnection!.createAnswer();
-        await this.peerConnection!.setLocalDescription(answer);
+        const answer = await this.ensurePeerConnection().createAnswer();
+        await this.ensurePeerConnection().setLocalDescription(answer);
 
         // Update call with answer
         await update(callRef, {
@@ -133,26 +156,14 @@ export class CallService {
         video: type === 'video',
       };
 
+      const connection = this.ensurePeerConnection();
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
       this.localStream.getTracks().forEach(track => {
-        this.peerConnection!.addTrack(track, this.localStream!);
+        connection.addTrack(track, this.localStream!);
       });
 
       // Set up remote stream
       this.remoteStream = new MediaStream();
-      this.peerConnection!.ontrack = (event) => {
-        event.streams[0].getTracks().forEach(track => {
-          this.remoteStream!.addTrack(track);
-        });
-      };
-
-      // Handle ICE candidates
-      this.peerConnection!.onicecandidate = (event) => {
-        if (event.candidate) {
-          // Send ICE candidate to Firebase
-          this.sendIceCandidate(event.candidate.toJSON());
-        }
-      };
 
     } catch (error) {
       console.error('Error setting up media:', error);
@@ -210,7 +221,7 @@ export class CallService {
       snapshot.forEach((childSnapshot) => {
         const candidate = childSnapshot.val();
         if (candidate && !candidate.processed) {
-          this.peerConnection!.addIceCandidate(new RTCIceCandidate(candidate));
+          this.ensurePeerConnection().addIceCandidate(new RTCIceCandidate(candidate));
           // Mark as processed
           update(childSnapshot.ref, { processed: true });
         }
@@ -229,7 +240,9 @@ export class CallService {
     }
     if (this.peerConnection) {
       this.peerConnection.close();
+      this.peerConnection = null;
     }
+    this.currentCallId = null;
 
     // Remove listeners
     off(callRef);
