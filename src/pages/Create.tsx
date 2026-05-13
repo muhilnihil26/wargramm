@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { Camera, Image as ImageIcon, X, Loader2, Music, Video, Globe, Users, Lock, Sparkles } from "lucide-react";
+import { Camera, Image as ImageIcon, X, Loader2, Music, Video, Globe, Users, Lock, Sparkles, Link as LinkIcon } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,6 +12,7 @@ import { MediaEditor } from "@/components/MediaEditor";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
+import { getPlaylistId, getYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl } from "@/lib/youtube";
 
 type Visibility = "public" | "followers" | "only_me";
 
@@ -27,6 +28,7 @@ const Create = () => {
   const [musicTitle, setMusicTitle] = useState("");
   const [musicStart, setMusicStart] = useState(0);
   const [musicEnd, setMusicEnd] = useState(30);
+  const [youtubePostUrl, setYoutubePostUrl] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
   const [uploading, setUploading] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
@@ -65,7 +67,60 @@ const Create = () => {
 
   const reset = () => {
     setPreview(null); setSelectedFile(null); setCaption("");
-    setMusicUrl(""); setMusicTitle(""); setMusicStart(0); setMusicEnd(30); setIsVideo(false);
+    setMusicUrl(""); setMusicTitle(""); setMusicStart(0); setMusicEnd(30); setIsVideo(false); setYoutubePostUrl("");
+  };
+
+  const saveToYouTubeLibrary = async (inputUrl: string) => {
+    if (!user) return;
+    const normalized = normalizeYouTubeUrl(inputUrl);
+    const videoId = getYouTubeId(normalized);
+    const playlistId = getPlaylistId(normalized);
+    const table = isUuid(user.id) ? "youtube_library" : "youtube_library_client";
+    const payload: any = {
+      url: normalized,
+      title: videoId ? `YouTube - ${videoId}` : playlistId ? `Playlist ${playlistId}` : "Saved YouTube",
+      thumbnail_url: videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null,
+      trim_start: 0,
+      trim_end: 60,
+      is_playlist: !videoId && !!playlistId,
+      playlist_id: playlistId,
+    };
+    if (isUuid(user.id)) payload.user_id = user.id;
+    else payload.firebase_uid = user.id;
+    await supabase.from(table as any).insert(payload);
+  };
+
+  const handleYouTubePost = async () => {
+    if (!user) return;
+    const trimmed = youtubePostUrl.trim();
+    if (!getYouTubeId(trimmed) && !getPlaylistId(trimmed)) {
+      toast.error("Paste a valid YouTube video, Short, or playlist URL");
+      return;
+    }
+    setUploading(true);
+    const normalized = normalizeYouTubeUrl(trimmed);
+    try {
+      const { error } = await supabase.from("posts").insert({
+        ...mediaOwnerPayload(user),
+        image_url: normalized,
+        is_video: true,
+        caption,
+        visibility,
+        music_url: musicUrl || null,
+        music_title: musicTitle || null,
+        music_start: musicUrl ? musicStart : 0,
+        music_end: musicUrl ? musicEnd : 30,
+      } as any);
+      if (error) throw error;
+      await saveToYouTubeLibrary(normalized).catch(() => {});
+      await rewardForPost(user.id);
+      toast.success("YouTube post shared!");
+      navigate("/");
+    } catch (error: any) {
+      toast.error(error.message || "Could not share YouTube post");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handlePost = async () => {
@@ -151,6 +206,39 @@ const Create = () => {
             </div>
             <input type="file" accept="image/*,video/*" ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
             <div className="space-y-3">
+              <div className="rounded-xl border border-border bg-secondary p-3 text-left">
+                <div className="flex items-center gap-2">
+                  <LinkIcon className="h-4 w-4 text-primary" />
+                  <input
+                    value={youtubePostUrl}
+                    onChange={(e) => setYoutubePostUrl(e.target.value)}
+                    placeholder="Paste YouTube video, Short, or playlist URL"
+                    className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+                  />
+                </div>
+                {youtubePostUrl.trim() && (getYouTubeId(youtubePostUrl) || getPlaylistId(youtubePostUrl)) && (
+                  <div className="mt-3 overflow-hidden rounded-lg bg-black aspect-video">
+                    <iframe src={youtubeEmbedUrl(youtubePostUrl)} className="h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen title="YouTube preview" />
+                  </div>
+                )}
+                <textarea
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  rows={2}
+                  placeholder="Caption for YouTube post"
+                  className="mt-3 w-full resize-none rounded-lg bg-background px-3 py-2 text-sm text-foreground outline-none"
+                />
+                <div className="mt-2 flex gap-2">
+                  {(["public", "followers", "only_me"] as Visibility[]).map((v) => (
+                    <button key={v} onClick={() => setVisibility(v)} className={`flex-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${visibility === v ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background text-foreground"}`}>
+                      {v === "public" ? "Everyone" : v === "followers" ? "Followers" : "Only me"}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={handleYouTubePost} disabled={uploading || !youtubePostUrl.trim()} className="mt-3 w-full rounded-lg bg-primary py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">
+                  {uploading ? "Sharing..." : "Share YouTube as Post"}
+                </button>
+              </div>
               <button onClick={() => setShowCamera(true)} className="flex w-full items-center gap-4 rounded-xl bg-gradient-to-r from-primary/20 to-primary/5 border border-primary/30 p-4 text-left transition-colors hover:from-primary/30">
                 <Sparkles className="h-6 w-6 text-primary" strokeWidth={1.5} />
                 <div>

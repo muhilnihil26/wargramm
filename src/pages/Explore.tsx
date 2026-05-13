@@ -6,6 +6,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { PostViewerModal } from "@/components/PostViewerModal";
 import { profileAvatar } from "@/lib/avatar";
+import { mediaOwnerAvatar, mediaOwnerName } from "@/lib/firebaseMedia";
+import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
+import { searchUsersEverywhere } from "@/lib/userDirectory";
 
 const demoPosts = [
   {
@@ -98,13 +101,7 @@ const Explore = () => {
     setSearchQuery(query);
     if (query.length < 2) { setSearchResults([]); return; }
     setSearching(true);
-    const { data } = await supabase
-      .from("profiles")
-      .select("user_id, username, full_name, avatar_url, bio")
-      .neq("user_id", user?.id || "")
-      .ilike("username", `%${query}%`)
-      .limit(15);
-    setSearchResults(data || []);
+    setSearchResults(await searchUsersEverywhere(query, user?.id, 15));
     setSearching(false);
   };
 
@@ -138,7 +135,10 @@ const Explore = () => {
               {searchResults.map((u) => (
                 <button
                   key={u.user_id}
-                  onClick={() => { setSearchQuery(""); setSearchResults([]); navigate(`/user/${u.user_id}`); }}
+                  onClick={() => {
+                    if (u.is_known_only) { return; }
+                    setSearchQuery(""); setSearchResults([]); navigate(`/user/${u.user_id}`);
+                  }}
                   className="flex w-full items-center gap-3 rounded-xl p-3 transition-colors hover:bg-secondary"
                 >
                   <img
@@ -149,6 +149,7 @@ const Explore = () => {
                   <div className="text-left min-w-0">
                     <p className="text-sm font-semibold text-foreground">{u.username}</p>
                     {u.full_name && <p className="text-xs text-muted-foreground truncate">{u.full_name}</p>}
+                    {u.is_known_only && <p className="text-[10px] text-muted-foreground">Existing user - opens after profile sync</p>}
                   </div>
                 </button>
               ))}
@@ -209,7 +210,9 @@ const Explore = () => {
                   onClick={() => setViewing(p)}
                   className="relative aspect-square overflow-hidden bg-secondary"
                 >
-                  {p.is_video ? (
+                  {getYouTubeId(p.image_url) ? (
+                    <img src={youtubeThumbnail(p.image_url) || p.image_url} alt="" className="h-full w-full object-cover transition-opacity hover:opacity-80" loading="lazy" />
+                  ) : p.is_video ? (
                     <video src={p.image_url} muted className="h-full w-full object-cover" />
                   ) : (
                     <img src={p.image_url} alt="" className="h-full w-full object-cover transition-opacity hover:opacity-80" loading="lazy" />
@@ -225,8 +228,8 @@ const Explore = () => {
         <PostViewerModal
           post={viewing}
           profile={{
-            username: viewing.profiles?.username || "user",
-            avatar_url: viewing.profiles?.avatar_url || null,
+            username: mediaOwnerName(viewing, viewing.profiles),
+            avatar_url: mediaOwnerAvatar(viewing, viewing.profiles) || null,
             is_verified: viewing.profiles?.is_verified || false,
           }}
           onClose={() => setViewing(null)}

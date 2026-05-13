@@ -11,6 +11,7 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { linkify } from "@/lib/linkify";
 import { profileAvatar } from "@/lib/avatar";
 import { chatService } from "@/services/chatService";
+import { searchUsersEverywhere } from "@/lib/userDirectory";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -536,29 +537,13 @@ const Messages = () => {
   const searchForUsers = async (query: string) => {
     setSearchUsers(query);
     if (!user || query.length < 2) { setSearchResults([]); return; }
-    const term = query.trim().replace(/[,()]/g, " ");
-    const base = supabase
-      .from("profiles")
-      .select("user_id, username, full_name, avatar_url, is_verified, email")
-      .or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%`)
-      .limit(10);
-    let { data, error } = isUuid(user.id) ? await base.neq("user_id", user.id) : await base;
-    if (error) {
-      const fallback = supabase
-        .from("profiles")
-        .select("user_id, username, full_name, avatar_url, is_verified")
-        .or(`username.ilike.%${term}%,full_name.ilike.%${term}%`)
-        .limit(10);
-      const res = isUuid(user.id) ? await fallback.neq("user_id", user.id) : await fallback;
-      data = res.data;
-    }
-    setSearchResults(data || []);
+    setSearchResults(await searchUsersEverywhere(query, user.id, 10));
   };
 
   const startConversation = async (otherUserId: string) => {
-    if (!user || !isUuid(otherUserId) || otherUserId === user.id) return;
+    if (!user || otherUserId === user.id) return;
     const other = searchResults.find((r) => r.user_id === otherUserId);
-    if (!isUuid(user.id)) {
+    if (!isUuid(user.id) || !isUuid(otherUserId)) {
       setActiveConvo({
         id: firebaseRoomId(user.id, otherUserId),
         user1_id: user.id,

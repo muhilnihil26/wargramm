@@ -21,3 +21,16 @@ export function getKnownProfile(email?: string | null) {
   if (!email) return null;
   return KNOWN_PROFILES[email.toLowerCase()] || null;
 }
+
+export function listKnownProfiles() {
+  return Object.entries(KNOWN_PROFILES).map(([email, profile]) => ({
+    id: `known:${email}`,
+    user_id: `known:${email}`,
+    email,
+    username: profile.username,
+    full_name: profile.fullName,
+    avatar_url: "",
+    is_verified: false,
+    is_known_only: true,
+  }));
+}
