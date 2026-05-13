@@ -13,6 +13,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { chatService } from "@/services/chatService";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
+import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -78,34 +79,6 @@ const mergeRemoteAndLocal = (roomId: string, remote: Message[]) => {
     ))
   ));
   return sortMessages([...local, ...remote]);
-};
-
-const loadClientCloudMessages = async (roomId: string): Promise<Message[]> => {
-  const { data, error } = await supabase
-    .from("firebase_messages" as any)
-    .select("*")
-    .eq("room_id", roomId)
-    .order("created_at", { ascending: true });
-  if (error) return [];
-  return (data || []).map((m: any) => ({
-    id: m.id,
-    sender_id: m.sender_id,
-    content: m.content || "",
-    image_url: m.image_url || null,
-    read: !!m.read,
-    created_at: m.created_at,
-  }));
-};
-
-const saveClientCloudMessage = async (roomId: string, message: Message, participants: string[]) => {
-  return supabase.from("firebase_messages" as any).insert({
-    room_id: roomId,
-    sender_id: message.sender_id,
-    participant_ids: participants,
-    content: message.content,
-    image_url: message.image_url || null,
-    read: message.read,
-  });
 };
 
 const readLocalConversations = (userId: string): Conversation[] => {
@@ -199,10 +172,10 @@ const Messages = () => {
         const { data: profile } = await supabase.from("profiles").select("user_id, username, avatar_url, last_seen, is_verified").eq("user_id", to).maybeSingle();
         otherProfile = profile;
       } else {
-        const { data: profile } = await supabase.from("firebase_profiles" as any).select("firebase_uid, username, avatar_url, is_verified").eq("firebase_uid", to).maybeSingle();
+        const profile = await readFirebasePublicProfile(to).catch(() => null);
         const known = listVisibleKnownProfiles().find((p) => p.user_id === to);
         otherProfile = profile
-          ? { user_id: profile.firebase_uid, username: profile.username || "User", avatar_url: profile.avatar_url || "", last_seen: null, is_verified: profile.is_verified }
+          ? { user_id: to, username: profile.username || profile.email?.split("@")[0] || "User", avatar_url: profile.avatar_url || "", last_seen: null, is_verified: profile.is_verified }
           : known || null;
       }
       otherProfile = otherProfile || { user_id: to, username: "User", avatar_url: "", last_seen: null, is_verified: false };
@@ -238,9 +211,7 @@ const Messages = () => {
   useEffect(() => {
     if (!activeConvo || !user) return;
     if (isFirebaseRoom(activeConvo.id)) {
-      loadClientCloudMessages(activeConvo.id).then((remote) => {
-        setMessages(mergeRemoteAndLocal(activeConvo.id, remote));
-      });
+      setMessages(readLocalMessages(activeConvo.id));
       try {
         const unsubscribe = chatService.onMessages(activeConvo.id, (items) => {
           const remote = items.map((m) => ({
@@ -463,7 +434,6 @@ const Messages = () => {
       setMessages((prev) => sortMessages([...prev, localMessage]));
       rememberLocalConversation(user.id, activeConvo, localMessage);
       setNewMessage("");
-      await saveClientCloudMessage(activeConvo.id, localMessage, [activeConvo.user1_id, activeConvo.user2_id]).catch(() => {});
       try {
         await chatService.sendMessage(activeConvo.id, {
           senderId: user.id,

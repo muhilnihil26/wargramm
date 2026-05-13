@@ -16,6 +16,7 @@ import { getKnownProfile } from "@/lib/knownUsers";
 import { isUuid } from "@/lib/ids";
 import { readClientProfile } from "@/lib/cloudProfile";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
+import { readFirebasePostBookmarks } from "@/lib/firebaseUserData";
 
 type TabType = "posts" | "reels" | "saved";
 
@@ -95,11 +96,8 @@ const Profile = () => {
         .filter((key) => key.startsWith(`wargram-local-save:post:${user.id}:`) && localStorage.getItem(key) === "true")
         .map((key) => key.split(":").pop())
         .filter(Boolean) as string[];
-      const { data: rows } = await supabase
-        .from("saved_posts_client" as any)
-        .select("post_id")
-        .eq("firebase_uid", user.id);
-      const ids = [...new Set([...(rows || []).map((r: any) => r.post_id), ...localIds])];
+      const firebaseIds = await readFirebasePostBookmarks(user.id).catch(() => []);
+      const ids = [...new Set([...firebaseIds, ...localIds])];
       if (ids.length === 0) return [];
       const { data: posts } = await supabase.from("posts").select("*").in("id", ids);
       return posts || [];

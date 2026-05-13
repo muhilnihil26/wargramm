@@ -12,6 +12,7 @@ import { ImageViewer } from "@/components/ImageViewer";
 import { profileAvatar } from "@/lib/avatar";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
+import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -28,11 +29,7 @@ const UserProfile = () => {
     queryKey: ["user-profile", userId],
     queryFn: async () => {
       if (!isUuid(userId)) {
-        const { data } = await supabase
-          .from("firebase_profiles" as any)
-          .select("*")
-          .eq("firebase_uid", userId!)
-          .maybeSingle();
+        const data = await readFirebasePublicProfile(userId!).catch(() => null);
         const adminFallback = listVisibleKnownProfiles().find((p) => p.user_id === userId);
         if (data) {
           return {

@@ -1,17 +1,15 @@
 import type { User } from "firebase/auth";
-import { supabase } from "@/integrations/supabase/client";
+import { get, ref, set } from "firebase/database";
+import { database } from "@/integrations/firebase/config";
 import { defaultLocalProfile, readLocalProfile, updateLocalProfile, type LocalProfile } from "./localProfile";
 
 export async function readClientProfile(user: (User & { id: string }) | null): Promise<LocalProfile | null> {
   if (!user) return null;
   const fallback = readLocalProfile(user) || defaultLocalProfile(user);
   try {
-    const { data, error } = await supabase
-      .from("firebase_profiles" as any)
-      .select("*")
-      .eq("firebase_uid", user.id)
-      .maybeSingle();
-    if (error || !data) return fallback;
+    const snapshot = await get(ref(database, `profiles/${user.id}`));
+    const data = snapshot.val();
+    if (!data) return fallback;
     return {
       ...fallback,
       user_id: user.id,
@@ -52,8 +50,13 @@ export async function saveClientProfile(user: User & { id: string }, patch: Part
     notification_ringtone: local.notification_ringtone || null,
     account_type: local.account_type || "personal",
   };
-  const { error } = await supabase
-    .from("firebase_profiles" as any)
-    .upsert(payload, { onConflict: "firebase_uid" });
-  return { profile: local, error };
+  try {
+    await set(ref(database, `profiles/${user.id}`), {
+      ...payload,
+      updated_at: Date.now(),
+    });
+    return { profile: local, error: null };
+  } catch (error) {
+    return { profile: local, error };
+  }
 }
