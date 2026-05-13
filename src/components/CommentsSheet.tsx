@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { toast } from "sonner";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface Comment {
   id: string;
@@ -88,6 +89,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
       onCommentAdded?.();
+      await logCloudAction(user, "post_comment", { post_id: postId, local_fallback: true }).catch(() => {});
       setSending(false);
       return;
     }
@@ -108,12 +110,14 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
       }
       setNewComment("");
       onCommentAdded?.();
+      await logCloudAction(user, "post_comment", { post_id: postId, owner_id: postUserId }).catch(() => {});
       loadComments();
     } else {
       saveLocalComment(postId, localComment);
       setComments((prev) => [...prev, localComment]);
       setNewComment("");
       onCommentAdded?.();
+      await logCloudAction(user, "post_comment", { post_id: postId, owner_id: postUserId, local_fallback: true }).catch(() => {});
       toast.info("Comment saved here. Database permission is blocked.");
     }
     setSending(false);

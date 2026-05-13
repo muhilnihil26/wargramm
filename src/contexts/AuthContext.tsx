@@ -5,6 +5,7 @@ import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { auth, googleProvider } from "@/integrations/firebase/config";
 import { getKnownProfile } from "@/lib/knownUsers";
 import { readClientProfile, saveClientProfile } from "@/lib/cloudProfile";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface AuthContextType {
   user: (User & { id: string }) | null;
@@ -81,6 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             avatar_url: profile?.avatar_url || normalized.photoURL || "",
             onboarded_at: profile?.onboarded_at || null,
           }))
+          .then(() => logCloudAction(normalized, "login", { provider: normalized.providerData?.[0]?.providerId || "firebase" }))
           .catch(() => {});
       }
       setSignedInUser(user, setUser, setSession);

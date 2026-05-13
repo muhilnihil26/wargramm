@@ -16,6 +16,7 @@ import { getYouTubeId } from "@/lib/youtube";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { filterVisibleMediaRows } from "@/lib/visibility";
+import { logCloudAction } from "@/lib/cloudActions";
 
 const Reels = () => {
   const { user } = useAuth();
@@ -184,9 +185,11 @@ const Reels = () => {
         } as any);
         if (error) throw error;
         await rewardForReel(user.id);
+        await logCloudAction(user, "reel_create", { source: "youtube", visibility }).catch(() => {});
         toast.success("YouTube reel added!");
       } catch (err: any) {
         saveLocalReel(ytUrl.trim(), "youtube");
+        await logCloudAction(user, "reel_create", { source: "youtube", visibility, local_fallback: true }).catch(() => {});
         toast.info("Reel saved on this device. Apply the Supabase migrations to sync it in cloud.");
       } finally {
         setUploading(false);
@@ -212,9 +215,11 @@ const Reels = () => {
         } as any);
         if (insertErr) throw insertErr;
         await rewardForReel(user.id);
+        await logCloudAction(user, "reel_create", { source: "file", visibility }).catch(() => {});
         toast.success("Reel uploaded!");
       } catch (err: any) {
         saveLocalReel(preview || "", "file");
+        await logCloudAction(user, "reel_create", { source: "file", visibility, local_fallback: true }).catch(() => {});
         toast.info("Reel saved on this device. Apply the Supabase migrations to sync it in cloud.");
       } finally {
         setUploading(false);

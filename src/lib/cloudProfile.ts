@@ -2,6 +2,7 @@ import type { User } from "firebase/auth";
 import { get, ref, set } from "firebase/database";
 import { database } from "@/integrations/firebase/config";
 import { defaultLocalProfile, readLocalProfile, updateLocalProfile, type LocalProfile } from "./localProfile";
+import { logCloudAction } from "./cloudActions";
 
 export async function readClientProfile(user: (User & { id: string }) | null): Promise<LocalProfile | null> {
   if (!user) return null;
@@ -55,6 +56,7 @@ export async function saveClientProfile(user: User & { id: string }, patch: Part
       ...payload,
       updated_at: Date.now(),
     });
+    await logCloudAction(user, "profile_update", { fields: Object.keys(patch) }).catch(() => {});
     return { profile: local, error: null };
   } catch (error) {
     return { profile: local, error };

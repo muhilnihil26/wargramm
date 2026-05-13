@@ -13,6 +13,7 @@ import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { getPlaylistId, getYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl } from "@/lib/youtube";
+import { logCloudAction } from "@/lib/cloudActions";
 
 type Visibility = "public" | "followers" | "only_me";
 
@@ -114,6 +115,7 @@ const Create = () => {
       if (error) throw error;
       await saveToYouTubeLibrary(normalized).catch(() => {});
       await rewardForPost(user.id);
+      await logCloudAction(user, "post_create", { source: "youtube", visibility }).catch(() => {});
       toast.success("YouTube post shared!");
       navigate("/");
     } catch (error: any) {
@@ -156,6 +158,7 @@ const Create = () => {
         } as any);
         if (insErr) throw insErr;
         await rewardForPost(user.id);
+        await logCloudAction(user, "post_create", { source: "file_video", visibility }).catch(() => {});
         toast.success("Video posted!");
       } else {
         // Image → posts bucket
@@ -182,6 +185,7 @@ const Create = () => {
         } as any);
         if (postError) throw postError;
         await rewardForPost(user.id);
+        await logCloudAction(user, "post_create", { source: "file_image", visibility }).catch(() => {});
         toast.success("Post shared!");
       }
       navigate("/");

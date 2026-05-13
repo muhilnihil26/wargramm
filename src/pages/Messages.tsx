@@ -14,6 +14,7 @@ import { chatService } from "@/services/chatService";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
+import { logCloudAction } from "@/lib/cloudActions";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -326,8 +327,10 @@ const Messages = () => {
     const existing = reactions.find((r) => r.message_id === messageId && r.user_id === user.id && r.emoji === emoji);
     if (existing) {
       await supabase.from("message_reactions").delete().eq("id", existing.id);
+      await logCloudAction(user, "message_reaction_remove", { message_id: messageId, emoji }).catch(() => {});
     } else {
       await supabase.from("message_reactions").insert({ message_id: messageId, user_id: user.id, emoji } as any);
+      await logCloudAction(user, "message_reaction_add", { message_id: messageId, emoji }).catch(() => {});
     }
     setPickerForMsg(null);
     loadReactions(activeConvo!.id);
@@ -380,10 +383,12 @@ const Messages = () => {
     setMessages((prev) => prev.filter((m) => m.id !== id));
     if (id.startsWith("local-") && activeConvo) {
       writeLocalMessages(activeConvo.id, readLocalMessages(activeConvo.id).filter((m) => m.id !== id));
+      await logCloudAction(user, "message_delete", { message_id: id, conversation_id: activeConvo.id, local_fallback: true }).catch(() => {});
       return;
     }
     const { error } = await supabase.from("messages").delete().eq("id", id);
     if (error) { toast.error(error.message); loadMessages(activeConvo!.id); }
+    else if (user && activeConvo) await logCloudAction(user, "message_delete", { message_id: id, conversation_id: activeConvo.id }).catch(() => {});
   };
 
   const sendTypingIndicator = useCallback(async () => {
@@ -441,8 +446,10 @@ const Messages = () => {
           text: draft,
           type: "text",
         });
+        await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text", firebase_room: true }).catch(() => {});
       } catch {
         persistLocalMessage(activeConvo.id, localMessage);
+        await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text", local_fallback: true }).catch(() => {});
         toast.info("Message saved here. Chat sync permission is blocked.");
       }
       setUploading(false);
@@ -472,10 +479,12 @@ const Messages = () => {
         persistLocalMessage(activeConvo.id, localMessage);
         rememberLocalConversation(user.id, activeConvo, localMessage);
         setMessages((prev) => prev.map((m) => m.id === tempId ? localMessage : m));
+        await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text", local_fallback: true }).catch(() => {});
         toast.info("Message saved here. Chat database permission is blocked.");
         return;
       }
       setMessages((prev) => prev.map((m) => m.id === tempId ? (data as Message) : m));
+      await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text" }).catch(() => {});
       // Clear typing
       const isUser1 = activeConvo.user1_id === user.id;
       const col = isUser1 ? "user1_typing_at" : "user2_typing_at";
@@ -528,6 +537,7 @@ const Messages = () => {
       persistLocalMessage(activeConvo.id, localMessage);
       rememberLocalConversation(user.id, activeConvo, localMessage);
       setMessages((prev) => sortMessages([...prev, localMessage]));
+      await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: imageUrl ? "image" : attachFile ? "file" : "text", local_fallback: true }).catch(() => {});
       toast.info("Message saved here. Chat database permission is blocked.");
       setNewMessage("");
       setImageFile(null);
@@ -542,6 +552,7 @@ const Messages = () => {
     setImagePreview(null);
     setAttachFile(null);
     setUploading(false);
+    await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: imageUrl ? "image" : attachFile ? "file" : "text" }).catch(() => {});
 
     const isUser1 = activeConvo.user1_id === user.id;
     const col = isUser1 ? "user1_typing_at" : "user2_typing_at";
@@ -663,7 +674,7 @@ const Messages = () => {
             ].map((item) => (
               <button
                 key={item.id}
-                onClick={() => { setChatBg(item.id); localStorage.setItem("wargram-chat-bg", item.id); setShowBgPicker(false); }}
+                onClick={() => { setChatBg(item.id); localStorage.setItem("wargram-chat-bg", item.id); if (user) logCloudAction(user, "chat_background_update", { background: item.id }).catch(() => {}); setShowBgPicker(false); }}
                 className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${chatBg === item.id ? "border-primary text-primary" : "border-border text-foreground"}`}
               >
                 <span className={`h-3 w-3 rounded-full ${item.cls}`} /> {item.label}

@@ -9,6 +9,7 @@ import { MusicTrimmer } from "@/components/MusicTrimmer";
 import { isUuid } from "@/lib/ids";
 import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
+import { logCloudAction } from "@/lib/cloudActions";
 
 function getYouTubeId(url: string): string | null {
   return parseYouTubeId(url);
@@ -139,9 +140,11 @@ const YouTube = () => {
     if (error) {
       const localItem = { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
       writeLocalItems([localItem, ...readLocalItems()]);
+      await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist, local_fallback: true }).catch(() => {});
       toast.info("Saved on this device. Apply the YouTube migration to sync it in cloud.");
     } else {
       if (data) writeLocalItems(readLocalItems().filter((it: any) => it.url !== data.url));
+      await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist }).catch(() => {});
       toast.success(isPlaylist ? "Playlist saved" : "Saved to your library");
     }
     setUrl(""); setTitle(""); setTrimStart(0); setTrimEnd(60); setPreviewUrl("");
@@ -152,10 +155,12 @@ const YouTube = () => {
     if (!confirm("Remove from library?")) return;
     if (id.startsWith("local-")) {
       writeLocalItems(readLocalItems().filter((it: any) => it.id !== id));
+      if (user) await logCloudAction(user, "youtube_delete", { item_id: id, local_fallback: true }).catch(() => {});
       return;
     }
     const { error } = await supabase.from(cloudTable as any).delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
+    if (user) await logCloudAction(user, "youtube_delete", { item_id: id }).catch(() => {});
     qc.invalidateQueries({ queryKey: ["youtube-library", user?.id] });
   };
 
@@ -212,6 +217,7 @@ const YouTube = () => {
           music_end: shareItem.trim_end || 60,
         } as any);
         if (error) throw error;
+        await logCloudAction(user, shareTarget === "short" ? "youtube_share_short" : "youtube_share_reel", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success(shareTarget === "short" ? "Posted to Shorts!" : "Posted to Reels!");
       } else if (shareTarget === "post") {
         const { error } = await supabase.from("posts").insert({
@@ -226,6 +232,7 @@ const YouTube = () => {
           music_end: shareItem.trim_end || 60,
         } as any);
         if (error) throw error;
+        await logCloudAction(user, "youtube_share_post", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Home!");
       } else {
         const { error } = await supabase.from("stories").insert({
@@ -237,6 +244,7 @@ const YouTube = () => {
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         } as any);
         if (error) throw error;
+        await logCloudAction(user, "youtube_share_story", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Story!");
       }
       const dest = shareTarget === "short" ? "/shorts" : shareTarget === "reel" ? "/reels" : "/";

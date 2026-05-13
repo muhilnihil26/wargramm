@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
 import { saveFirebasePostBookmark } from "@/lib/firebaseUserData";
+import { logCloudAction } from "@/lib/cloudActions";
 
 import { VerifiedBadge } from "./VerifiedBadge";
 
@@ -59,14 +60,17 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       await saveFirebasePostBookmark(user.id, id, next).catch(() => {
         toast.info("Saved here. Firebase sync permission is blocked.");
       });
+      await logCloudAction(user, next ? "post_save" : "post_unsave", { post_id: id, owner_id: userId || null }).catch(() => {});
       return;
     }
     if (saved) {
       setSaved(false);
       await supabase.from("saved_posts").delete().eq("user_id", user.id).eq("post_id", id);
+      await logCloudAction(user, "post_unsave", { post_id: id, owner_id: userId || null }).catch(() => {});
     } else {
       setSaved(true);
       await supabase.from("saved_posts").insert({ user_id: user.id, post_id: id });
+      await logCloudAction(user, "post_save", { post_id: id, owner_id: userId || null }).catch(() => {});
     }
   };
   const [likeCount, setLikeCount] = useState(likes);
@@ -82,6 +86,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       setLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLikeCount((c) => (next ? c + 1 : c - 1));
+      await logCloudAction(user, next ? "post_like" : "post_unlike", { post_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }
 
@@ -91,12 +96,14 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       setLikeCount((c) => c - 1);
       const { error } = await supabase.from("likes").delete().eq("user_id", user.id).eq("post_id", id);
       if (error) toast.info("Like saved on this device.");
+      await logCloudAction(user, "post_unlike", { post_id: id, owner_id: userId || null, local_fallback: !!error }).catch(() => {});
     } else if (!liked) {
       setLiked(true);
       if (localLikeKey) localStorage.setItem(localLikeKey, "true");
       setLikeCount((c) => c + 1);
       const { error } = await supabase.from("likes").insert({ user_id: user.id, post_id: id });
       if (error) toast.info("Like saved on this device.");
+      await logCloudAction(user, "post_like", { post_id: id, owner_id: userId || null, local_fallback: !!error }).catch(() => {});
       if (!error && userId && userId !== user.id && isUuid(userId)) {
         await supabase.from("notifications").insert({ user_id: userId, actor_id: user.id, type: "like", post_id: id });
       }
@@ -237,6 +244,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
                     if (!confirm("Delete this post?")) return;
                     const { error } = await supabase.from("posts").delete().eq("id", id!);
                     if (error) { toast.error(error.message); return; }
+                    await logCloudAction(user, "post_delete", { post_id: id }).catch(() => {});
                     toast.success("Post deleted");
                     setShowMore(false);
                     queryClient.invalidateQueries({ queryKey: ["feed-posts"] });

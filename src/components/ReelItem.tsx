@@ -11,6 +11,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface ReelItemProps {
   id: string;
@@ -87,6 +88,7 @@ export function ReelItem({
       setLocalLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLocalLikeOffset((n) => n + (next ? 1 : -1));
+      await logCloudAction(user, next ? "reel_like" : "reel_unlike", { reel_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }
     if (!isUuid(user.id)) {
@@ -94,6 +96,7 @@ export function ReelItem({
       setLocalLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
       setLocalLikeOffset((n) => n + (next ? 1 : -1));
+      await logCloudAction(user, next ? "reel_like" : "reel_unlike", { reel_id: id, owner_id: userId || null, local_fallback: true }).catch(() => {});
       return;
     }
     if (likeInfo?.liked || localLiked) {
@@ -102,12 +105,14 @@ export function ReelItem({
       setLocalLikeOffset((n) => n - 1);
       const { error } = await supabase.from("reel_likes").delete().eq("reel_id", id).eq("user_id", user.id);
       if (error) toast.info("Like saved on this device.");
+      await logCloudAction(user, "reel_unlike", { reel_id: id, owner_id: userId || null, local_fallback: !!error }).catch(() => {});
     } else {
       setLocalLiked(true);
       if (localLikeKey) localStorage.setItem(localLikeKey, "true");
       setLocalLikeOffset((n) => n + 1);
       const { error } = await supabase.from("reel_likes").insert({ reel_id: id, user_id: user.id } as any);
       if (error) toast.info("Like saved on this device.");
+      await logCloudAction(user, "reel_like", { reel_id: id, owner_id: userId || null, local_fallback: !!error }).catch(() => {});
     }
     queryClient.invalidateQueries({ queryKey: ["reel-likes", id, user.id] });
   };
@@ -117,6 +122,7 @@ export function ReelItem({
     if (!confirm("Delete this reel?")) return;
     const { error } = await supabase.from("reels").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
+    await logCloudAction(user, "reel_delete", { reel_id: id }).catch(() => {});
     toast.success("Reel deleted");
     setShowMore(false);
     queryClient.invalidateQueries({ queryKey: ["reels"] });
@@ -221,7 +227,7 @@ export function ReelItem({
           <Repeat2 className="h-7 w-7 text-white" strokeWidth={1.5} />
           <span className="text-xs text-white">Remix</span>
         </button>
-        <button onClick={() => { const next = !localSaved; setLocalSaved(next); if (localSaveKey) localStorage.setItem(localSaveKey, String(next)); setSaved(next); toast.success(next ? "Saved" : "Unsaved"); }}>
+        <button onClick={() => { const next = !localSaved; setLocalSaved(next); if (localSaveKey) localStorage.setItem(localSaveKey, String(next)); setSaved(next); if (user) logCloudAction(user, next ? "reel_save" : "reel_unsave", { reel_id: id, owner_id: userId || null }).catch(() => {}); toast.success(next ? "Saved" : "Unsaved"); }}>
           <Bookmark className={`h-7 w-7 ${localSaved || saved ? "fill-white text-white" : "text-white"}`} strokeWidth={1.5} />
         </button>
         <button onClick={() => setShowMore(true)}>

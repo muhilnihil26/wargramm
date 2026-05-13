@@ -10,6 +10,7 @@ import { getWebPushPreference, setWebPushPreference, getWebPushStatus } from "@/
 import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
 import { readClientProfile, saveClientProfile } from "@/lib/cloudProfile";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface SettingsSheetProps {
   onClose: () => void;
@@ -148,6 +149,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     setTheme(next);
     document.documentElement.classList.toggle("light", next === "light");
     localStorage.setItem("wargram-theme", next);
+    if (user) logCloudAction(user, "theme_update", { theme: next }).catch(() => {});
   };
 
   const go = (path: string) => { onClose(); navigate(path); };
@@ -177,6 +179,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
       await saveClientProfile(user, { phone: cleaned || null });
       setPhoneSaving(false);
       toast.success("Phone saved");
+      await logCloudAction(user, "settings_phone_update", { local_fallback: false }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
       setView("main");
       return;
@@ -185,6 +188,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     setPhoneSaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Phone saved");
+    await logCloudAction(user, "settings_phone_update").catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });
     setView("main");
@@ -197,6 +201,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
       await saveClientProfile(user, { is_private: isPrivate, show_activity: showActivity });
       setPrivacySaving(false);
       toast.success("Privacy updated");
+      await logCloudAction(user, "settings_privacy_update", { is_private: isPrivate, show_activity: showActivity }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
       queryClient.invalidateQueries({ queryKey: ["profile"] });
       setView("main");
@@ -209,6 +214,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     setPrivacySaving(false);
     if (error) { toast.error(error.message); return; }
     toast.success("Privacy updated");
+    await logCloudAction(user, "settings_privacy_update", { is_private: isPrivate, show_activity: showActivity }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
     queryClient.invalidateQueries({ queryKey: ["profile"] });
     setView("main");
@@ -222,6 +228,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
       await saveClientProfile(user, { notification_ringtone: ringtone });
       setRingtoneSaving(false);
       toast.success("Ringtone saved");
+      await logCloudAction(user, "settings_ringtone_update", { ringtone }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
       setView("main");
       return;
@@ -233,6 +240,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     setRingtoneSaving(false);
     if (error) { toast.error("Apply the ringtone migration first, then try again."); return; }
     toast.success("Ringtone saved");
+    await logCloudAction(user, "settings_ringtone_update", { ringtone }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
     setView("main");
   };

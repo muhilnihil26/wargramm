@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile, updateLocalProfile } from "@/lib/localProfile";
+import { logCloudAction } from "@/lib/cloudActions";
 
 type AccountType = "personal" | "business" | "developer";
 
@@ -42,6 +43,7 @@ const AccountType = () => {
     setSaving(true);
     if (!isUuid(user.id)) {
       updateLocalProfile(user, { account_type: selected });
+      await logCloudAction(user, "account_type_update", { account_type: selected, local_fallback: true }).catch(() => {});
       setSaving(false);
       toast.success(`Switched to ${selected} account`);
       qc.invalidateQueries({ queryKey: ["account-type"] });
@@ -52,6 +54,7 @@ const AccountType = () => {
     const { error } = await supabase.from("profiles").update({ account_type: selected } as any).eq("user_id", user.id);
     setSaving(false);
     if (error) { toast.error(error.message); return; }
+    await logCloudAction(user, "account_type_update", { account_type: selected }).catch(() => {});
     toast.success(`Switched to ${selected} account`);
     qc.invalidateQueries({ queryKey: ["account-type"] });
     qc.invalidateQueries({ queryKey: ["profile"] });

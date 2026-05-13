@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { saveClientProfile } from "@/lib/cloudProfile";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface EditProfileModalProps {
   profile: {
@@ -54,6 +55,7 @@ export function EditProfileModal({ profile, onClose }: EditProfileModalProps) {
         const { error } = await saveClientProfile(user, { username, full_name: fullName, bio, website, avatar_url: avatarUrl || "", instagram_username: instagram.replace(/^@/, "").trim() || null });
         queryClient.invalidateQueries({ queryKey: ["profile"] });
         queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
+        await logCloudAction(user, "profile_edit", { local_fallback: !!error }).catch(() => {});
         toast.success(error ? "Profile updated here. Apply cloud migration to sync it." : "Profile updated!");
         onClose();
         return;
@@ -75,6 +77,7 @@ export function EditProfileModal({ profile, onClose }: EditProfileModalProps) {
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ["profile"] });
+      await logCloudAction(user, "profile_edit", { fields: ["username", "full_name", "bio", "website", "avatar_url", "instagram_username"] }).catch(() => {});
       toast.success("Profile updated!");
       onClose();
     } catch (err: any) {

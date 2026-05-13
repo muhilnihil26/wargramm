@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
 import { readFirebaseFollowState, readFirebasePublicProfile, saveFirebaseFollowState } from "@/lib/firebaseUserData";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface FollowButtonProps {
   targetUserId: string;
@@ -79,6 +80,7 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
       setState("none");
       writeLocalFollow(user.id, targetUserId, "none");
       onChange?.(false);
+      await logCloudAction(user, "unfollow", { target_user_id: targetUserId }).catch(() => {});
       if (isUuid(user.id) && isUuid(targetUserId)) {
         await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", targetUserId);
       }
@@ -88,6 +90,7 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
       if (isUuid(user.id) && isUuid(targetUserId)) {
         await supabase.from("follow_requests").delete().eq("requester_id", user.id).eq("target_id", targetUserId);
       }
+      await logCloudAction(user, "follow_request_cancel", { target_user_id: targetUserId }).catch(() => {});
       toast.success("Request cancelled");
     } else {
       // none
@@ -96,6 +99,7 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
           setState("requested");
           writeLocalFollow(user.id, targetUserId, "requested");
           await saveFirebaseFollowState(user.id, targetUserId, "requested").catch(() => {});
+          await logCloudAction(user, "follow_request", { target_user_id: targetUserId }).catch(() => {});
           toast.success("Request saved");
           setLoading(false);
           return;
@@ -104,11 +108,13 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
         if (!error) {
           setState("requested");
           writeLocalFollow(user.id, targetUserId, "requested");
+          await logCloudAction(user, "follow_request", { target_user_id: targetUserId }).catch(() => {});
           await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow_request" });
           toast.success("Request sent");
         } else {
           setState("requested");
           writeLocalFollow(user.id, targetUserId, "requested");
+          await logCloudAction(user, "follow_request", { target_user_id: targetUserId }).catch(() => {});
           toast.success("Request saved");
         }
       } else {
@@ -121,6 +127,7 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
         if (!isUuid(user.id) || !isUuid(targetUserId)) {
           await saveFirebaseFollowState(user.id, targetUserId, "following").catch(() => {});
         }
+        await logCloudAction(user, "follow", { target_user_id: targetUserId }).catch(() => {});
         if (!error) {
           if (isUuid(user.id) && isUuid(targetUserId)) await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow" });
           toast.success("Following");

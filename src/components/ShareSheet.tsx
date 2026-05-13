@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface ShareSheetProps {
   shareUrl: string;
@@ -117,9 +118,10 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
     if (!user) return;
     const content = `${shareLabel}\n${shareUrl}`;
     setSendingTo(target.user_id);
-    if (!isUuid(user.id) || !isUuid(target.user_id)) {
-      saveLocalShare(user, target, content);
-      setSentTo((prev) => new Set(prev).add(target.user_id));
+      if (!isUuid(user.id) || !isUuid(target.user_id)) {
+        saveLocalShare(user, target, content);
+        await logCloudAction(user, "share_send", { target_user_id: target.user_id, local_fallback: true }).catch(() => {});
+        setSentTo((prev) => new Set(prev).add(target.user_id));
       setSendingTo(null);
       toast.success(`Sent to ${target.username || "user"}`);
       return;
@@ -148,11 +150,13 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
       });
       if (msgErr) throw msgErr;
 
-      setSentTo((prev) => new Set(prev).add(target.user_id));
-      toast.success(`Sent to ${target.username || "user"}`);
-    } catch (e: any) {
-      saveLocalShare(user, target, content);
-      setSentTo((prev) => new Set(prev).add(target.user_id));
+        setSentTo((prev) => new Set(prev).add(target.user_id));
+        await logCloudAction(user, "share_send", { target_user_id: target.user_id }).catch(() => {});
+        toast.success(`Sent to ${target.username || "user"}`);
+      } catch (e: any) {
+        saveLocalShare(user, target, content);
+        await logCloudAction(user, "share_send", { target_user_id: target.user_id, local_fallback: true }).catch(() => {});
+        setSentTo((prev) => new Set(prev).add(target.user_id));
       toast.success(`Sent to ${target.username || "user"}`);
     } finally {
       setSendingTo(null);
@@ -160,9 +164,10 @@ export function ShareSheet({ shareUrl, shareLabel, onClose }: ShareSheetProps) {
   };
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success("Link copied");
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        await logCloudAction(user, "share_copy", { share_url: shareUrl }).catch(() => {});
+        toast.success("Link copied");
     } catch {
       if (navigator.share) {
         try {

@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface AddStoryModalProps {
   onClose: () => void;
@@ -95,6 +96,7 @@ export function AddStoryModal({ onClose }: AddStoryModalProps) {
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ["stories"] });
+      await logCloudAction(user, "story_create", { visibility, type: isVideo ? "video" : textMode ? "thought" : "image" }).catch(() => {});
       toast.success("Story added!");
       onClose();
     } catch (err: any) {

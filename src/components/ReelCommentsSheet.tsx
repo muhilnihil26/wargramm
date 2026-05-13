@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { toast } from "sonner";
+import { logCloudAction } from "@/lib/cloudActions";
 
 interface ReelComment {
   id: string;
@@ -86,16 +87,18 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
       setComments((prev) => [...prev, localComment]);
       setText("");
       onCommentAdded?.();
+      await logCloudAction(user, "reel_comment", { reel_id: reelId, local_fallback: true }).catch(() => {});
       setSending(false);
       return;
     }
     const { error } = await supabase.from("reel_comments").insert({ reel_id: reelId, user_id: user.id, content: text.trim() } as any);
-    if (!error) { setText(""); onCommentAdded?.(); load(); }
+    if (!error) { setText(""); onCommentAdded?.(); await logCloudAction(user, "reel_comment", { reel_id: reelId }).catch(() => {}); load(); }
     else {
       saveLocalComment(reelId, localComment);
       setComments((prev) => [...prev, localComment]);
       setText("");
       onCommentAdded?.();
+      await logCloudAction(user, "reel_comment", { reel_id: reelId, local_fallback: true }).catch(() => {});
       toast.info("Comment saved here. Database permission is blocked.");
     }
     setSending(false);
