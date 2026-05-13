@@ -10,6 +10,7 @@ import { isUuid } from "@/lib/ids";
 import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { logCloudAction } from "@/lib/cloudActions";
+import { deleteFirebaseYouTubeItem, readFirebaseYouTubeItems, saveFirebaseMedia, saveFirebaseYouTubeItem } from "@/lib/firebaseUserData";
 
 function getYouTubeId(url: string): string | null {
   return parseYouTubeId(url);
@@ -86,13 +87,14 @@ const YouTube = () => {
     enabled: !!user,
     queryFn: async () => {
       const localItems = readLocalItems();
+      const firebaseItems = await readFirebaseYouTubeItems(user!.id).catch(() => []);
       const { data, error } = await supabase
         .from(cloudTable as any)
         .select("*")
         .eq(isUuid(user!.id) ? "user_id" : "firebase_uid", user!.id)
         .order("created_at", { ascending: false });
-      if (error) return localItems;
-      return data || [];
+      if (error) return [...firebaseItems, ...localItems];
+      return [...firebaseItems, ...(data || []), ...localItems];
     },
   });
 
@@ -138,10 +140,17 @@ const YouTube = () => {
     const { data, error } = await supabase.from(cloudTable as any).insert(payload).select("*").single();
     setSaving(false);
     if (error) {
-      const localItem = { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
-      writeLocalItems([localItem, ...readLocalItems()]);
-      await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist, local_fallback: true }).catch(() => {});
-      toast.info("Saved on this device. Apply the YouTube migration to sync it in cloud.");
+      try {
+        const firebaseItem = await saveFirebaseYouTubeItem(user, payload);
+        writeLocalItems(readLocalItems().filter((it: any) => it.url !== firebaseItem.url));
+        await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist, firebase_fallback: true }).catch(() => {});
+        toast.success("Saved to Firebase cloud library");
+      } catch {
+        const localItem = { ...payload, id: `local-${Date.now()}`, created_at: new Date().toISOString() };
+        writeLocalItems([localItem, ...readLocalItems()]);
+        await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist, local_fallback: true }).catch(() => {});
+        toast.info("Saved on this device. Firebase/Supabase are both blocked.");
+      }
     } else {
       if (data) writeLocalItems(readLocalItems().filter((it: any) => it.url !== data.url));
       await logCloudAction(user, "youtube_save", { url: normalizedUrl, playlist: isPlaylist }).catch(() => {});
@@ -156,6 +165,12 @@ const YouTube = () => {
     if (id.startsWith("local-")) {
       writeLocalItems(readLocalItems().filter((it: any) => it.id !== id));
       if (user) await logCloudAction(user, "youtube_delete", { item_id: id, local_fallback: true }).catch(() => {});
+      return;
+    }
+    if (!isUuid(id)) {
+      await deleteFirebaseYouTubeItem(user!.id, id).catch(() => {});
+      if (user) await logCloudAction(user, "youtube_delete", { item_id: id, firebase_fallback: true }).catch(() => {});
+      qc.invalidateQueries({ queryKey: ["youtube-library", user?.id] });
       return;
     }
     const { error } = await supabase.from(cloudTable as any).delete().eq("id", id);
@@ -216,7 +231,17 @@ const YouTube = () => {
           music_start: shareItem.trim_start || 0,
           music_end: shareItem.trim_end || 60,
         } as any);
-        if (error) throw error;
+        if (error) {
+          await saveFirebaseMedia("reel", user, {
+            video_url: videoUrl,
+            caption: shareCaption,
+            visibility: shareVisibility,
+            music_url: shareItem.url,
+            music_title: shareItem.title,
+            music_start: shareItem.trim_start || 0,
+            music_end: shareItem.trim_end || 60,
+          });
+        }
         await logCloudAction(user, shareTarget === "short" ? "youtube_share_short" : "youtube_share_reel", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success(shareTarget === "short" ? "Posted to Shorts!" : "Posted to Reels!");
       } else if (shareTarget === "post") {
@@ -231,7 +256,18 @@ const YouTube = () => {
           music_start: shareItem.trim_start || 0,
           music_end: shareItem.trim_end || 60,
         } as any);
-        if (error) throw error;
+        if (error) {
+          await saveFirebaseMedia("post", user, {
+            image_url: shareItem.url,
+            is_video: true,
+            caption: shareCaption || shareItem.title,
+            visibility: shareVisibility,
+            music_url: shareItem.url,
+            music_title: shareItem.title,
+            music_start: shareItem.trim_start || 0,
+            music_end: shareItem.trim_end || 60,
+          });
+        }
         await logCloudAction(user, "youtube_share_post", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Home!");
       } else {
@@ -249,7 +285,9 @@ const YouTube = () => {
           const retry = await supabase.from("stories").insert(legacyPayload);
           error = retry.error;
         }
-        if (error) throw error;
+        if (error) {
+          await saveFirebaseMedia("story", user, storyPayload);
+        }
         await logCloudAction(user, "youtube_share_story", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Story!");
       }

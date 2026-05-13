@@ -17,6 +17,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 import { filterVisibleMediaRows } from "@/lib/visibility";
+import { readFirebaseMedia } from "@/lib/firebaseUserData";
 
 const Index = () => {
   const { user } = useAuth();
@@ -35,8 +36,11 @@ const Index = () => {
         .gte("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false });
 
-      if (!data || data.length === 0) return [];
-      const visibleStories = await filterVisibleMediaRows(data as any[], user);
+      const firebaseStories = await readFirebaseMedia("story").catch(() => []);
+      const liveFirebaseStories = firebaseStories.filter((s: any) => !s.expires_at || new Date(s.expires_at).getTime() > Date.now());
+      const rows = [...(data || []), ...liveFirebaseStories];
+      if (rows.length === 0) return [];
+      const visibleStories = await filterVisibleMediaRows(rows as any[], user);
       if (visibleStories.length === 0) return [];
 
       const userIds = [...new Set(visibleStories.map((s: any) => s.user_id).filter(Boolean))];
@@ -91,8 +95,10 @@ const Index = () => {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      if (!postsData) return [];
-      const visiblePosts = await filterVisibleMediaRows(postsData as any[], user);
+      const firebasePosts = await readFirebaseMedia("post").catch(() => []);
+      const rows = [...(postsData || []), ...firebasePosts].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)).slice(0, 50);
+      if (rows.length === 0) return [];
+      const visiblePosts = await filterVisibleMediaRows(rows as any[], user);
       if (visiblePosts.length === 0) return [];
 
       const postIds = visiblePosts.map((p: any) => p.id);
@@ -133,8 +139,10 @@ const Index = () => {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(30);
-      if (!data) return [];
-      const visibleReels = await filterVisibleMediaRows(data as any[], user);
+      const firebaseReels = await readFirebaseMedia("reel").catch(() => []);
+      const rows = [...(data || []), ...firebaseReels].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)).slice(0, 30);
+      if (rows.length === 0) return [];
+      const visibleReels = await filterVisibleMediaRows(rows as any[], user);
       const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       return visibleReels.map((r: any) => ({

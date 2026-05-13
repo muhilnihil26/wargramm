@@ -1,5 +1,62 @@
 import { get, push, ref, remove, set } from "firebase/database";
 import { database } from "@/integrations/firebase/config";
+import type { User } from "firebase/auth";
+import { mediaOwnerPayload } from "./firebaseMedia";
+
+type MediaKind = "post" | "reel" | "story";
+
+const mediaPath = (kind: MediaKind) => (kind === "post" ? "firebasePosts" : kind === "reel" ? "firebaseReels" : "firebaseStories");
+
+export async function saveFirebaseMedia(kind: MediaKind, user: User, payload: Record<string, any>) {
+  const itemRef = push(ref(database, mediaPath(kind)));
+  const now = new Date().toISOString();
+  const row = {
+    ...mediaOwnerPayload(user),
+    ...payload,
+    id: itemRef.key,
+    user_id: payload.user_id || null,
+    firebase_uid: user.uid || user.id,
+    created_at: payload.created_at || now,
+    firebase_backup: true,
+  };
+  await set(itemRef, row);
+  return row;
+}
+
+export async function readFirebaseMedia(kind: MediaKind) {
+  const snapshot = await get(ref(database, mediaPath(kind)));
+  const value = snapshot.val();
+  if (!value) return [];
+  return Object.values(value)
+    .filter(Boolean)
+    .sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)) as any[];
+}
+
+export async function saveFirebaseYouTubeItem(user: User, payload: Record<string, any>) {
+  const itemRef = push(ref(database, `youtubeLibrary/${user.uid || user.id}`));
+  const row = {
+    ...payload,
+    id: itemRef.key,
+    firebase_uid: user.uid || user.id,
+    created_at: payload.created_at || new Date().toISOString(),
+    firebase_backup: true,
+  };
+  await set(itemRef, row);
+  return row;
+}
+
+export async function readFirebaseYouTubeItems(userId: string) {
+  const snapshot = await get(ref(database, `youtubeLibrary/${userId}`));
+  const value = snapshot.val();
+  if (!value) return [];
+  return Object.values(value)
+    .filter(Boolean)
+    .sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)) as any[];
+}
+
+export async function deleteFirebaseYouTubeItem(userId: string, itemId: string) {
+  await remove(ref(database, `youtubeLibrary/${userId}/${itemId}`));
+}
 
 export async function saveFirebasePostBookmark(userId: string, postId: string, saved: boolean) {
   const path = `bookmarks/${userId}/posts/${postId}`;

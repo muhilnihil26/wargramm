@@ -8,6 +8,7 @@ import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { logCloudAction } from "@/lib/cloudActions";
+import { saveFirebaseMedia } from "@/lib/firebaseUserData";
 
 interface AddStoryModalProps {
   onClose: () => void;
@@ -91,13 +92,24 @@ export function AddStoryModal({ onClose }: AddStoryModalProps) {
       const { error } = await supabase.from("stories").insert({
         ...mediaOwnerPayload(user),
         image_url: publicUrl,
+        is_video: isVideo,
+        caption: textMode ? storyText.trim() : null,
         visibility,
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       } as any);
-      if (error) throw error;
+      if (error) {
+        await saveFirebaseMedia("story", user, {
+          image_url: publicUrl,
+          is_video: isVideo,
+          caption: textMode ? storyText.trim() : null,
+          visibility,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        });
+      }
 
       queryClient.invalidateQueries({ queryKey: ["stories"] });
-      await logCloudAction(user, "story_create", { visibility, type: isVideo ? "video" : textMode ? "thought" : "image" }).catch(() => {});
-      toast.success("Story added!");
+      await logCloudAction(user, "story_create", { visibility, type: isVideo ? "video" : textMode ? "thought" : "image", firebase_fallback: !!error }).catch(() => {});
+      toast.success(error ? "Story media uploaded and saved to Firebase cloud" : "Story added!");
       onClose();
     } catch (err: any) {
       toast.error(err.message);

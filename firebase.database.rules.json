@@ -65,6 +65,30 @@
         ".write": "auth != null"
       }
     },
+    "firebasePosts": {
+      ".read": "auth != null",
+      "$postId": {
+        ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
+      }
+    },
+    "firebaseReels": {
+      ".read": "auth != null",
+      "$reelId": {
+        ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
+      }
+    },
+    "firebaseStories": {
+      ".read": "auth != null",
+      "$storyId": {
+        ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
+      }
+    },
+    "youtubeLibrary": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
     "messages": {
       "$roomId": {
         ".read": "auth != null",

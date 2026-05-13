@@ -14,6 +14,7 @@ import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { getPlaylistId, getYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl } from "@/lib/youtube";
 import { logCloudAction } from "@/lib/cloudActions";
+import { saveFirebaseMedia, saveFirebaseYouTubeItem } from "@/lib/firebaseUserData";
 
 type Visibility = "public" | "followers" | "only_me";
 
@@ -88,7 +89,8 @@ const Create = () => {
     };
     if (isUuid(user.id)) payload.user_id = user.id;
     else payload.firebase_uid = user.id;
-    await supabase.from(table as any).insert(payload);
+    const { error } = await supabase.from(table as any).insert(payload);
+    if (error) await saveFirebaseYouTubeItem(user, payload);
   };
 
   const handleYouTubePost = async () => {
@@ -112,11 +114,22 @@ const Create = () => {
         music_start: musicUrl ? musicStart : 0,
         music_end: musicUrl ? musicEnd : 30,
       } as any);
-      if (error) throw error;
+      if (error) {
+        await saveFirebaseMedia("post", user, {
+          image_url: normalized,
+          is_video: true,
+          caption,
+          visibility,
+          music_url: musicUrl || null,
+          music_title: musicTitle || null,
+          music_start: musicUrl ? musicStart : 0,
+          music_end: musicUrl ? musicEnd : 30,
+        });
+      }
       await saveToYouTubeLibrary(normalized).catch(() => {});
       await rewardForPost(user.id);
-      await logCloudAction(user, "post_create", { source: "youtube", visibility }).catch(() => {});
-      toast.success("YouTube post shared!");
+      await logCloudAction(user, "post_create", { source: "youtube", visibility, firebase_fallback: !!error }).catch(() => {});
+      toast.success(error ? "YouTube post saved to Firebase cloud" : "YouTube post shared!");
       navigate("/");
     } catch (error: any) {
       toast.error(error.message || "Could not share YouTube post");
@@ -156,10 +169,21 @@ const Create = () => {
           music_start: musicUrl ? musicStart : 0,
           music_end: musicUrl ? musicEnd : 30,
         } as any);
-        if (insErr) throw insErr;
+        if (insErr) {
+          await saveFirebaseMedia("post", user, {
+            image_url: publicUrl,
+            is_video: true,
+            caption,
+            visibility,
+            music_url: musicUrl || null,
+            music_title: title || null,
+            music_start: musicUrl ? musicStart : 0,
+            music_end: musicUrl ? musicEnd : 30,
+          });
+        }
         await rewardForPost(user.id);
-        await logCloudAction(user, "post_create", { source: "file_video", visibility }).catch(() => {});
-        toast.success("Video posted!");
+        await logCloudAction(user, "post_create", { source: "file_video", visibility, firebase_fallback: !!insErr }).catch(() => {});
+        toast.success(insErr ? "Video uploaded and saved to Firebase cloud" : "Video posted!");
       } else {
         // Image → posts bucket
         const { error: upErr } = await supabase.storage.from("posts").upload(filePath, selectedFile);
@@ -183,10 +207,20 @@ const Create = () => {
           music_start: musicUrl ? musicStart : 0,
           music_end: musicUrl ? musicEnd : 30,
         } as any);
-        if (postError) throw postError;
+        if (postError) {
+          await saveFirebaseMedia("post", user, {
+            image_url: publicUrl,
+            caption,
+            visibility,
+            music_url: musicUrl || null,
+            music_title: title || null,
+            music_start: musicUrl ? musicStart : 0,
+            music_end: musicUrl ? musicEnd : 30,
+          });
+        }
         await rewardForPost(user.id);
-        await logCloudAction(user, "post_create", { source: "file_image", visibility }).catch(() => {});
-        toast.success("Post shared!");
+        await logCloudAction(user, "post_create", { source: "file_image", visibility, firebase_fallback: !!postError }).catch(() => {});
+        toast.success(postError ? "Post media uploaded and saved to Firebase cloud" : "Post shared!");
       }
       navigate("/");
     } catch (error: any) {

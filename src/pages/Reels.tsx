@@ -17,6 +17,7 @@ import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { filterVisibleMediaRows } from "@/lib/visibility";
 import { logCloudAction } from "@/lib/cloudActions";
+import { readFirebaseMedia, saveFirebaseMedia } from "@/lib/firebaseUserData";
 
 const Reels = () => {
   const { user } = useAuth();
@@ -120,9 +121,11 @@ const Reels = () => {
         .from("reels")
         .select("*")
         .order("created_at", { ascending: false });
+      const firebaseReels = await readFirebaseMedia("reel").catch(() => []);
+      const rows = [...(data || []), ...firebaseReels];
       const localReels = readLocalReels();
-      if (!data) return localReels;
-      const visibleReels = await filterVisibleMediaRows(data as any[], user);
+      if (rows.length === 0) return localReels;
+      const visibleReels = await filterVisibleMediaRows(rows as any[], user);
       const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       const cloudReels = visibleReels.map((r: any) => ({
@@ -183,10 +186,20 @@ const Reels = () => {
           music_start: musicStart || 0,
           music_end: musicEnd || 60,
         } as any);
-        if (error) throw error;
+        if (error) {
+          await saveFirebaseMedia("reel", user, {
+            video_url: ytUrl.trim(),
+            caption,
+            visibility,
+            music_url: null,
+            music_title: musicTitle || null,
+            music_start: musicStart || 0,
+            music_end: musicEnd || 60,
+          });
+        }
         await rewardForReel(user.id);
-        await logCloudAction(user, "reel_create", { source: "youtube", visibility }).catch(() => {});
-        toast.success("YouTube reel added!");
+        await logCloudAction(user, "reel_create", { source: "youtube", visibility, firebase_fallback: !!error }).catch(() => {});
+        toast.success(error ? "YouTube reel saved to Firebase cloud" : "YouTube reel added!");
       } catch (err: any) {
         saveLocalReel(ytUrl.trim(), "youtube");
         await logCloudAction(user, "reel_create", { source: "youtube", visibility, local_fallback: true }).catch(() => {});
@@ -213,10 +226,20 @@ const Reels = () => {
           music_start: musicUrl ? musicStart : 0,
           music_end: musicUrl ? musicEnd : 30,
         } as any);
-        if (insertErr) throw insertErr;
+        if (insertErr) {
+          await saveFirebaseMedia("reel", user, {
+            video_url: publicUrl,
+            caption,
+            visibility,
+            music_url: musicUrl || null,
+            music_title: musicTitle || null,
+            music_start: musicUrl ? musicStart : 0,
+            music_end: musicUrl ? musicEnd : 30,
+          });
+        }
         await rewardForReel(user.id);
-        await logCloudAction(user, "reel_create", { source: "file", visibility }).catch(() => {});
-        toast.success("Reel uploaded!");
+        await logCloudAction(user, "reel_create", { source: "file", visibility, firebase_fallback: !!insertErr }).catch(() => {});
+        toast.success(insertErr ? "Reel media uploaded and saved to Firebase cloud" : "Reel uploaded!");
       } catch (err: any) {
         saveLocalReel(preview || "", "file");
         await logCloudAction(user, "reel_create", { source: "file", visibility, local_fallback: true }).catch(() => {});
