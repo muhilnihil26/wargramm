@@ -11,7 +11,7 @@ import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 import { logCloudAction } from "@/lib/cloudActions";
-import { get, ref, remove } from "firebase/database";
+import { get, ref, remove, set } from "firebase/database";
 import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 
 type Tab = "ai" | "settings" | "users" | "cloud" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
@@ -966,6 +966,7 @@ export default Admin;
 
 function FirebaseCloudMigration({ adminId }: { adminId: string }) {
   const [running, setRunning] = useState(false);
+  const [factoryRunning, setFactoryRunning] = useState(false);
   const isHardcodedAdmin = adminId === "nxANfkUL63MSTv300eH6rSICw9w1";
 
   const runCleanup = async () => {
@@ -997,6 +998,90 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
       toast.error(error?.message || "Firebase cleanup failed. Deploy database rules first.");
     } finally {
       setRunning(false);
+    }
+  };
+
+  const runFactoryClear = async () => {
+    if (!isHardcodedAdmin) {
+      toast.error("Only the configured Firebase admin can run this cleanup.");
+      return;
+    }
+    const phrase = prompt("Type CLEAR to delete all app users, posts, reels, stories, follows, chats, notifications, and saved data. The admin login/password is not deleted.");
+    if (phrase !== "CLEAR") return;
+    setFactoryRunning(true);
+    try {
+      const adminProfileSnap = await get(ref(database, `profiles/${adminId}`)).catch(() => null);
+      const adminProfile = adminProfileSnap?.val?.() || {
+        username: "muhilsiddhesh",
+        full_name: "Muhil Siddhesh",
+        email: "muhilsiddhesh.in@gmail.com",
+        firebase_uid: adminId,
+        is_admin: true,
+      };
+
+      await Promise.all([
+        remove(ref(database, "firebasePosts")),
+        remove(ref(database, "firebaseReels")),
+        remove(ref(database, "firebaseStories")),
+        remove(ref(database, "postLikes")),
+        remove(ref(database, "reelLikes")),
+        remove(ref(database, "postComments")),
+        remove(ref(database, "reelComments")),
+        remove(ref(database, "profiles")),
+        remove(ref(database, "follows")),
+        remove(ref(database, "followers")),
+        remove(ref(database, "followRequests")),
+        remove(ref(database, "bookmarks")),
+        remove(ref(database, "youtubeLibrary")),
+        remove(ref(database, "callInvites")),
+        remove(ref(database, "pushTokens")),
+        remove(ref(database, "firebaseNotifications")),
+        remove(ref(database, "rooms")),
+        remove(ref(database, "messages")),
+        remove(ref(database, "calls")),
+      ]);
+      await set(ref(database, `profiles/${adminId}`), {
+        ...adminProfile,
+        email: adminProfile.email || "muhilsiddhesh.in@gmail.com",
+        firebase_uid: adminId,
+        is_admin: true,
+        updated_at: Date.now(),
+      });
+
+      await Promise.all([
+        supabase.from("message_reactions" as any).delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("messages").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("conversations").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("comments").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("reel_comments" as any).delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("likes").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("reel_likes").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("saved_posts").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("posts").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("reels").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("stories").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("notifications").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("follow_requests").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("follows").delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("youtube_library" as any).delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("youtube_library_client" as any).delete().neq("id", "00000000-0000-0000-0000-000000000000"),
+        supabase.from("profiles").delete().neq("email", "muhilsiddhesh.in@gmail.com"),
+      ]);
+
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith("wargram-"))
+        .forEach((key) => {
+          if (["wargram-theme", "wargram-ringtone", "wargram-web-push-enabled", "wargram-web-push-asked"].includes(key)) return;
+          localStorage.removeItem(key);
+        });
+
+      await logCloudAction({ id: adminId, uid: adminId } as any, "admin_factory_clear_keep_admin", { kept_admin: adminId }).catch(() => {});
+      toast.success("App data cleared. Admin account was kept; all media was removed.");
+      setTimeout(() => window.location.reload(), 700);
+    } catch (error: any) {
+      toast.error(error?.message || "Cleanup failed. Check Firebase rules and Supabase policies.");
+    } finally {
+      setFactoryRunning(false);
     }
   };
 
@@ -1039,6 +1124,23 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
         </button>
         {!isHardcodedAdmin && (
           <p className="mt-2 text-[11px] text-muted-foreground">Sign in as the configured Firebase admin to enable this.</p>
+        )}
+      </div>
+      <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4">
+        <h2 className="text-sm font-bold text-foreground">Factory clear app data</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Deletes all app users, posts, reels, stories, follows, chats, saved data, notifications, and YouTube library data. Keeps only the configured admin profile. Admin login/password cannot be deleted from the client app.
+        </p>
+        <button
+          onClick={runFactoryClear}
+          disabled={factoryRunning || !isHardcodedAdmin}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2.5 text-sm font-bold text-destructive-foreground disabled:opacity-50"
+        >
+          {factoryRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {factoryRunning ? "Clearing app..." : "Clear Everything Except Admin"}
+        </button>
+        {!isHardcodedAdmin && (
+          <p className="mt-2 text-[11px] text-muted-foreground">Sign in as nxANfkUL63MSTv300eH6rSICw9w1 to enable this action.</p>
         )}
       </div>
       <div className="rounded-2xl border border-border bg-secondary/40 p-4">
