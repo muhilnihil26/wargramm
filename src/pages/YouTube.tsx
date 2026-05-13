@@ -235,14 +235,20 @@ const YouTube = () => {
         await logCloudAction(user, "youtube_share_post", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Home!");
       } else {
-        const { error } = await supabase.from("stories").insert({
+        const storyPayload = {
           ...mediaOwnerPayload(user),
           image_url: shareItem.url,
           is_video: true,
           caption: shareCaption || shareItem.title,
           visibility: shareVisibility,
           expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        } as any);
+        } as any;
+        let { error } = await supabase.from("stories").insert(storyPayload);
+        if (error && /caption|is_video/i.test(error.message || "")) {
+          const { caption: _caption, is_video: _isVideo, ...legacyPayload } = storyPayload;
+          const retry = await supabase.from("stories").insert(legacyPayload);
+          error = retry.error;
+        }
         if (error) throw error;
         await logCloudAction(user, "youtube_share_story", { visibility: shareVisibility, url: shareItem.url }).catch(() => {});
         toast.success("Posted to Story!");
