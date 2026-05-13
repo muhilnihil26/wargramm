@@ -13,6 +13,7 @@ import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMe
 import { logCloudAction } from "@/lib/cloudActions";
 import { get, ref, remove, set } from "firebase/database";
 import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
+import { deleteFirebaseMedia, readFirebaseMedia } from "@/lib/firebaseUserData";
 
 type Tab = "ai" | "settings" | "users" | "cloud" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
@@ -55,14 +56,28 @@ const Admin = () => {
   const { data: allUsers = [] } = useQuery({
     queryKey: ["admin-users"],
     queryFn: async () => {
-      const [{ data: profiles }, { data: posts }, { data: reels }, { data: stories }] = await Promise.all([
+      const [{ data: profiles }, { data: posts }, { data: reels }, { data: stories }, firebaseProfilesSnap] = await Promise.all([
         supabase.from("profiles").select("*").order("created_at", { ascending: false }),
         supabase.from("posts").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
         supabase.from("reels").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
         supabase.from("stories").select("firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at").not("firebase_uid", "is", null).limit(200),
+        get(ref(database, "profiles")).catch(() => null),
       ]);
       const byId = new Map<string, any>();
       (profiles || []).forEach((p: any) => byId.set(p.user_id, p));
+      Object.entries(firebaseProfilesSnap?.val?.() || {}).forEach(([uid, profile]: [string, any]) => {
+        if (!uid || byId.has(uid)) return;
+        byId.set(uid, {
+          id: uid,
+          user_id: uid,
+          firebase_uid: uid,
+          username: profile?.username || profile?.email?.split("@")[0] || "firebase_user",
+          full_name: profile?.full_name || profile?.email || "",
+          avatar_url: profile?.avatar_url || "",
+          created_at: profile?.created_at || profile?.updated_at || null,
+          is_firebase_user: true,
+        });
+      });
       [...(posts || []), ...(reels || []), ...(stories || [])].forEach((row: any) => {
         if (!row.firebase_uid || byId.has(row.firebase_uid)) return;
         byId.set(row.firebase_uid, {
@@ -94,7 +109,8 @@ const Admin = () => {
     queryKey: ["admin-posts"],
     queryFn: async () => {
       const { data } = await supabase.from("posts").select("*").order("created_at", { ascending: false });
-      return data || [];
+      const firebasePosts = await readFirebaseMedia("post").catch(() => []);
+      return [...(data || []), ...firebasePosts].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0));
     },
     enabled: !!isAdmin,
   });
@@ -103,7 +119,8 @@ const Admin = () => {
     queryKey: ["admin-reels"],
     queryFn: async () => {
       const { data } = await supabase.from("reels").select("*").order("created_at", { ascending: false });
-      return data || [];
+      const firebaseReels = await readFirebaseMedia("reel").catch(() => []);
+      return [...(data || []), ...firebaseReels].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0));
     },
     enabled: !!isAdmin,
   });
@@ -135,6 +152,13 @@ const Admin = () => {
 
   const deletePost = async (id: string) => {
     const reason = prompt("Reason for removing this post/video:") || "Removed by admin";
+    if (!isUuid(id)) {
+      await deleteFirebaseMedia("post", id).catch((error) => { throw error; });
+      queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-posts"] });
+      toast.success("Post deleted");
+      return;
+    }
     const { error } = await supabase.from("posts").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
     if (error) {
       const canHardDelete = /is_removed|removed_|schema cache|column/i.test(error.message || "");
@@ -150,6 +174,14 @@ const Admin = () => {
   };
   const deleteReel = async (id: string) => {
     const reason = prompt("Reason for removing this reel/video:") || "Removed by admin";
+    if (!isUuid(id)) {
+      await deleteFirebaseMedia("reel", id).catch((error) => { throw error; });
+      queryClient.invalidateQueries({ queryKey: ["admin-reels"] });
+      queryClient.invalidateQueries({ queryKey: ["reels"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-reels"] });
+      toast.success("Reel deleted");
+      return;
+    }
     const { error } = await supabase.from("reels").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
     if (error) {
       const canHardDelete = /is_removed|removed_|schema cache|column/i.test(error.message || "");
@@ -175,7 +207,17 @@ const Admin = () => {
     }
     if (!confirm(`Remove @${target.username || targetId} from the app? This does not delete Firebase Authentication login.`)) return;
     try {
+      const removeFirebaseMediaByOwner = async (path: string) => {
+        const snap = await get(ref(database, path)).catch(() => null);
+        const rows = snap?.val?.() || {};
+        await Promise.all(Object.entries(rows)
+          .filter(([, row]: [string, any]) => (row?.firebase_uid || row?.user_id) === targetId)
+          .map(([id]) => remove(ref(database, `${path}/${id}`)).catch(() => {})));
+      };
       await Promise.all([
+        removeFirebaseMediaByOwner("firebasePosts"),
+        removeFirebaseMediaByOwner("firebaseReels"),
+        removeFirebaseMediaByOwner("firebaseStories"),
         remove(ref(database, `profiles/${targetId}`)).catch(() => {}),
         remove(ref(database, `follows/${targetId}`)).catch(() => {}),
         remove(ref(database, `followers/${targetId}`)).catch(() => {}),
@@ -187,15 +229,29 @@ const Admin = () => {
       ]);
       if (isUuid(targetId)) {
         await Promise.all([
+          supabase.from("posts").delete().eq("user_id", targetId),
+          supabase.from("reels").delete().eq("user_id", targetId),
+          supabase.from("stories").delete().eq("user_id", targetId),
           supabase.from("follows").delete().or(`follower_id.eq.${targetId},following_id.eq.${targetId}`),
           supabase.from("follow_requests").delete().or(`requester_id.eq.${targetId},target_id.eq.${targetId}`),
           supabase.from("notifications").delete().or(`user_id.eq.${targetId},actor_id.eq.${targetId}`),
           supabase.from("user_roles").delete().eq("user_id", targetId),
           supabase.from("profiles").delete().eq("user_id", targetId),
         ]);
+      } else {
+        await Promise.all([
+          supabase.from("posts").delete().eq("firebase_uid", targetId),
+          supabase.from("reels").delete().eq("firebase_uid", targetId),
+          supabase.from("stories").delete().eq("firebase_uid", targetId),
+        ]);
       }
       await logCloudAction(user, "admin_user_delete_app", { target_id: targetId }).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-reels"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-posts"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-reels"] });
+      queryClient.invalidateQueries({ queryKey: ["reels"] });
       toast.success("User removed from app data");
     } catch (error: any) {
       toast.error(error?.message || "Could not remove user");
