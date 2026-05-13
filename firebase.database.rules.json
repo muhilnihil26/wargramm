@@ -20,25 +20,25 @@
     "follows": {
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')"
       }
     },
     "followers": {
       "$targetUid": {
         ".read": "auth != null",
-        "$followerUid": { ".write": "auth != null && auth.uid == $followerUid" }
+        "$followerUid": { ".write": "auth != null && (auth.uid == $followerUid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')" }
       }
     },
     "followRequests": {
       "$targetUid": {
         ".read": "auth != null && (auth.uid == $targetUid || data.child(auth.uid).exists())",
-        "$requesterUid": { ".write": "auth != null && (auth.uid == $requesterUid || auth.uid == $targetUid)" }
+        "$requesterUid": { ".write": "auth != null && (auth.uid == $requesterUid || auth.uid == $targetUid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')" }
       }
     },
     "bookmarks": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')"
       }
     },
     "postLikes": {
@@ -93,7 +93,7 @@
     "youtubeLibrary": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')"
       }
     },
     "messages": {
@@ -122,14 +122,14 @@
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
         "$roomId": {
-          ".write": "auth != null && (auth.uid == $uid || newData.child('from').val() == auth.uid || data.child('from').val() == auth.uid)"
+          ".write": "auth != null && (auth.uid == $uid || newData.child('from').val() == auth.uid || data.child('from').val() == auth.uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')"
         }
       }
     },
     "pushTokens": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid"
+        ".write": "auth != null && (auth.uid == $uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')"
       }
     },
     "notificationsDemo": {

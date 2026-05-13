@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp, BadgeDollarSign, ExternalLink, Cloud } from "lucide-react";
+import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp, BadgeDollarSign, ExternalLink, Cloud, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { database } from "@/integrations/firebase/config";
 import { useAuth } from "@/contexts/AuthContext";
@@ -12,6 +12,7 @@ import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 import { logCloudAction } from "@/lib/cloudActions";
 import { get, ref, remove } from "firebase/database";
+import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 
 type Tab = "ai" | "settings" | "users" | "cloud" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
@@ -28,6 +29,7 @@ const Admin = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>("ai");
+  const [previewMedia, setPreviewMedia] = useState<any | null>(null);
 
   const { data: isAdmin, isLoading } = useQuery({
     queryKey: ["is-admin", user?.id],
@@ -148,6 +150,42 @@ const Admin = () => {
   };
   const deleteMusic = async (id: string) => { await supabase.from("music").delete().eq("id", id); queryClient.invalidateQueries({ queryKey: ["admin-music"] }); toast.success("Track removed"); };
 
+  const deleteUserFromApp = async (target: any) => {
+    const targetId = target.user_id || target.firebase_uid || target.id;
+    if (!targetId) return;
+    if (targetId === "nxANfkUL63MSTv300eH6rSICw9w1" || target.full_name === "muhilsiddhesh.in@gmail.com" || target.email === "muhilsiddhesh.in@gmail.com") {
+      toast.error("Admin user cannot be deleted.");
+      return;
+    }
+    if (!confirm(`Remove @${target.username || targetId} from the app? This does not delete Firebase Authentication login.`)) return;
+    try {
+      await Promise.all([
+        remove(ref(database, `profiles/${targetId}`)).catch(() => {}),
+        remove(ref(database, `follows/${targetId}`)).catch(() => {}),
+        remove(ref(database, `followers/${targetId}`)).catch(() => {}),
+        remove(ref(database, `followRequests/${targetId}`)).catch(() => {}),
+        remove(ref(database, `bookmarks/${targetId}`)).catch(() => {}),
+        remove(ref(database, `youtubeLibrary/${targetId}`)).catch(() => {}),
+        remove(ref(database, `callInvites/${targetId}`)).catch(() => {}),
+        remove(ref(database, `pushTokens/${targetId}`)).catch(() => {}),
+      ]);
+      if (isUuid(targetId)) {
+        await Promise.all([
+          supabase.from("follows").delete().or(`follower_id.eq.${targetId},following_id.eq.${targetId}`),
+          supabase.from("follow_requests").delete().or(`requester_id.eq.${targetId},target_id.eq.${targetId}`),
+          supabase.from("notifications").delete().or(`user_id.eq.${targetId},actor_id.eq.${targetId}`),
+          supabase.from("user_roles").delete().eq("user_id", targetId),
+          supabase.from("profiles").delete().eq("user_id", targetId),
+        ]);
+      }
+      await logCloudAction(user, "admin_user_delete_app", { target_id: targetId }).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast.success("User removed from app data");
+    } catch (error: any) {
+      toast.error(error?.message || "Could not remove user");
+    }
+  };
+
   if (isLoading) return <div className="flex min-h-screen items-center justify-center bg-background"><p className="text-muted-foreground">Loading...</p></div>;
   if (!isAdmin) return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background gap-4">
@@ -216,6 +254,14 @@ const Admin = () => {
                   <p className="text-sm font-semibold text-foreground truncate">{u.username || "unnamed"}</p>
                   <p className="text-xs text-muted-foreground">{u.full_name}</p>
                 </div>
+                <button
+                  onClick={() => deleteUserFromApp(u)}
+                  className="rounded-lg p-2 text-destructive hover:bg-background"
+                  aria-label="Delete user from app"
+                  title="Delete user from app"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -254,12 +300,17 @@ const Admin = () => {
             <p className="text-sm text-muted-foreground">{allPosts.length} posts</p>
             {allPosts.map((p: any) => (
               <div key={p.id} className="flex items-center gap-3 rounded-xl bg-secondary p-3">
-                <img src={p.image_url} alt="" className="h-14 w-14 rounded-lg object-cover" />
+                <button onClick={() => setPreviewMedia({ type: "post", url: p.image_url, isVideo: p.is_video, title: p.caption || "Post" })} className="relative h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-black">
+                  <AdminMediaThumb url={p.image_url} isVideo={p.is_video} />
+                </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{mediaOwnerName(p)}</p>
                   <p className="text-xs text-muted-foreground truncate">{p.caption || "No caption"}</p>
                   {p.is_removed && <p className="text-[11px] text-destructive truncate">Removed: {p.removed_reason || "No reason"}</p>}
                 </div>
+                <button onClick={() => setPreviewMedia({ type: "post", url: p.image_url, isVideo: p.is_video, title: p.caption || "Post" })} className="rounded-lg p-2 text-primary hover:bg-background" aria-label="Preview post">
+                  <Eye className="h-4 w-4" />
+                </button>
                 {!p.is_removed && <button onClick={() => deletePost(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>}
               </div>
             ))}
@@ -271,11 +322,17 @@ const Admin = () => {
             <p className="text-sm text-muted-foreground">{allReels.length} reels</p>
             {allReels.map((r: any) => (
               <div key={r.id} className="flex items-center gap-3 rounded-xl bg-secondary p-3">
-                <Film className="h-5 w-5 text-primary shrink-0" />
+                <button onClick={() => setPreviewMedia({ type: "reel", url: r.video_url, isVideo: true, title: r.caption || "Reel" })} className="relative h-20 w-14 shrink-0 overflow-hidden rounded-lg bg-black">
+                  <AdminMediaThumb url={r.video_url} isVideo />
+                </button>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-foreground truncate">{r.caption || "No caption"}</p>
+                  <p className="text-xs text-muted-foreground truncate">{mediaOwnerName(r)}</p>
                   {r.is_removed && <p className="text-[11px] text-destructive truncate">Removed: {r.removed_reason || "No reason"}</p>}
                 </div>
+                <button onClick={() => setPreviewMedia({ type: "reel", url: r.video_url, isVideo: true, title: r.caption || "Reel" })} className="rounded-lg p-2 text-primary hover:bg-background" aria-label="Preview reel">
+                  <Eye className="h-4 w-4" />
+                </button>
                 {!r.is_removed && <button onClick={() => deleteReel(r.id)}><Trash2 className="h-4 w-4 text-destructive" /></button>}
               </div>
             ))}
@@ -304,6 +361,7 @@ const Admin = () => {
         {activeTab === "blocks" && <BlocksAdmin users={allUsers} adminId={user!.id} /> }
       </main>
       </div>
+      {previewMedia && <AdminMediaPreview media={previewMedia} onClose={() => setPreviewMedia(null)} />}
     </div>
   );
 };
@@ -954,6 +1012,48 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
         {!isHardcodedAdmin && (
           <p className="mt-2 text-[11px] text-muted-foreground">Sign in as the configured Firebase admin to enable this.</p>
         )}
+      </div>
+    </div>
+  );
+}
+
+function AdminMediaThumb({ url, isVideo }: { url?: string | null; isVideo?: boolean }) {
+  const ytThumb = url ? youtubeThumbnail(url) : null;
+  if (ytThumb) return <img src={ytThumb} alt="" className="h-full w-full object-cover" />;
+  if (isVideo && url) return <video src={url} className="h-full w-full object-cover" muted preload="metadata" />;
+  if (url) return <img src={url} alt="" className="h-full w-full object-cover" />;
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background">
+      <Film className="h-5 w-5 text-muted-foreground" />
+    </div>
+  );
+}
+
+function AdminMediaPreview({ media, onClose }: { media: any; onClose: () => void }) {
+  const youtubeId = getYouTubeId(media.url || "");
+  return (
+    <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl bg-background" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-foreground">{media.title || "Preview"}</p>
+            <p className="text-[11px] uppercase text-muted-foreground">{media.type}</p>
+          </div>
+          <button onClick={onClose} className="rounded-full p-2 hover:bg-secondary" aria-label="Close preview">
+            <XIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="bg-black">
+          {youtubeId ? (
+            <div className="aspect-video w-full">
+              <iframe src={youtubeEmbedUrl(media.url)} title="Admin media preview" className="h-full w-full" allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+            </div>
+          ) : media.isVideo ? (
+            <video src={media.url} className="max-h-[75vh] w-full bg-black object-contain" controls autoPlay />
+          ) : (
+            <img src={media.url} alt="" className="max-h-[75vh] w-full object-contain" />
+          )}
+        </div>
       </div>
     </div>
   );
