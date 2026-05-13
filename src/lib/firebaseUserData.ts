@@ -22,6 +22,66 @@ export async function readFirebasePublicProfile(uid: string) {
   return snapshot.val();
 }
 
+export type FirebaseFollowState = "none" | "following" | "requested";
+
+export async function saveFirebaseFollowState(userId: string, targetUserId: string, state: FirebaseFollowState) {
+  const followingPath = `follows/${userId}/following/${targetUserId}`;
+  const followerPath = `followers/${targetUserId}/${userId}`;
+  const requestPath = `followRequests/${targetUserId}/${userId}`;
+
+  if (state === "none") {
+    await Promise.all([
+      remove(ref(database, followingPath)),
+      remove(ref(database, followerPath)),
+      remove(ref(database, requestPath)),
+    ]);
+    return;
+  }
+
+  if (state === "requested") {
+    await Promise.all([
+      remove(ref(database, followingPath)),
+      remove(ref(database, followerPath)),
+      set(ref(database, requestPath), { requester_id: userId, target_id: targetUserId, created_at: Date.now(), status: "pending" }),
+    ]);
+    return;
+  }
+
+  await Promise.all([
+    remove(ref(database, requestPath)),
+    set(ref(database, followingPath), { following_id: targetUserId, created_at: Date.now() }),
+    set(ref(database, followerPath), { follower_id: userId, created_at: Date.now() }),
+  ]);
+}
+
+export async function readFirebaseFollowState(userId: string, targetUserId: string): Promise<FirebaseFollowState> {
+  const [following, request] = await Promise.all([
+    get(ref(database, `follows/${userId}/following/${targetUserId}`)),
+    get(ref(database, `followRequests/${targetUserId}/${userId}`)),
+  ]);
+  if (following.exists()) return "following";
+  if (request.exists()) return "requested";
+  return "none";
+}
+
+export async function readFirebaseFollowingIds(userId: string): Promise<string[]> {
+  const snapshot = await get(ref(database, `follows/${userId}/following`));
+  const value = snapshot.val();
+  if (!value) return [];
+  return Object.keys(value);
+}
+
+export async function readFirebaseFollowCounts(userId: string) {
+  const [followersSnap, followingSnap] = await Promise.all([
+    get(ref(database, `followers/${userId}`)),
+    get(ref(database, `follows/${userId}/following`)),
+  ]);
+  return {
+    followers: followersSnap.val() ? Object.keys(followersSnap.val()).length : 0,
+    following: followingSnap.val() ? Object.keys(followingSnap.val()).length : 0,
+  };
+}
+
 export async function searchFirebaseProfiles(term: string, currentUserId?: string | null, limit = 15) {
   const normalized = term.trim().toLowerCase();
   if (normalized.length < 2) return [];
@@ -38,5 +98,23 @@ export async function searchFirebaseProfiles(term: string, currentUserId?: strin
     }))
     .filter((row) => row.user_id !== currentUserId)
     .filter((row) => `${row.username} ${row.full_name} ${row.email}`.toLowerCase().includes(normalized))
+    .slice(0, limit);
+}
+
+export async function listFirebaseProfiles(currentUserId?: string | null, limit = 20) {
+  const snapshot = await get(ref(database, "profiles"));
+  const value = snapshot.val() || {};
+  return Object.entries(value)
+    .map(([uid, profile]: [string, any]) => ({
+      user_id: uid,
+      username: profile.username || profile.email?.split("@")[0] || "user",
+      full_name: profile.full_name || "",
+      avatar_url: profile.avatar_url || "",
+      email: profile.email || "",
+      is_verified: !!profile.is_verified,
+      updated_at: profile.updated_at || 0,
+    }))
+    .filter((row) => row.user_id !== currentUserId)
+    .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
     .slice(0, limit);
 }

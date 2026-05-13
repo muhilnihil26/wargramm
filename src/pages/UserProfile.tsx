@@ -12,7 +12,8 @@ import { ImageViewer } from "@/components/ImageViewer";
 import { profileAvatar } from "@/lib/avatar";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
-import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
+import { readFirebaseFollowCounts, readFirebaseFollowState, readFirebasePublicProfile, saveFirebaseFollowState } from "@/lib/firebaseUserData";
+import { filterVisibleMediaRows } from "@/lib/visibility";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -64,11 +65,12 @@ const UserProfile = () => {
     queryKey: ["user-profile-stats", userId],
     queryFn: async () => {
       if (!isUuid(userId)) {
-        const [{ count: postCount }, { count: reelCount }] = await Promise.all([
+        const [{ count: postCount }, { count: reelCount }, followCounts] = await Promise.all([
           supabase.from("posts").select("*", { count: "exact", head: true }).eq("firebase_uid", userId!),
           supabase.from("reels").select("*", { count: "exact", head: true }).eq("firebase_uid", userId!),
+          readFirebaseFollowCounts(userId!).catch(() => ({ followers: 0, following: 0 })),
         ]);
-        return { posts: (postCount || 0) + (reelCount || 0), followers: 0, following: 0 };
+        return { posts: (postCount || 0) + (reelCount || 0), followers: followCounts.followers, following: followCounts.following };
       }
       const [{ count: postCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", userId!),
@@ -82,8 +84,12 @@ const UserProfile = () => {
 
   const { data: relation } = useQuery({
     queryKey: ["relation", user?.id, userId],
-    enabled: !!user && isUuid(userId),
+    enabled: !!user && !!userId && user?.id !== userId,
     queryFn: async () => {
+      if (!isUuid(user?.id) || !isUuid(userId)) {
+        const state = await readFirebaseFollowState(user!.id, userId!).catch(() => "none");
+        return { following: state === "following", requested: state === "requested" };
+      }
       const [{ data: follow }, { data: req }] = await Promise.all([
         supabase.from("follows").select("id").eq("follower_id", user!.id).eq("following_id", userId!).maybeSingle(),
         supabase.from("follow_requests").select("id, status").eq("requester_id", user!.id).eq("target_id", userId!).maybeSingle(),
@@ -101,13 +107,21 @@ const UserProfile = () => {
     enabled: !!userId && canSeePosts,
     queryFn: async () => {
       const { data } = await supabase.from("posts").select("*").eq(isUuid(userId) ? "user_id" : "firebase_uid", userId!).order("created_at", { ascending: false });
-      return data || [];
+      return filterVisibleMediaRows((data || []) as any[], user);
     },
   });
 
   const followAction = useMutation({
     mutationFn: async () => {
-      if (!user || !isUuid(userId)) return;
+      if (!user || !userId) return;
+      if (!isUuid(user.id) || !isUuid(userId)) {
+        if (relation?.following || relation?.requested) {
+          await saveFirebaseFollowState(user.id, userId!, "none");
+        } else {
+          await saveFirebaseFollowState(user.id, userId!, isPrivate ? "requested" : "following");
+        }
+        return;
+      }
       if (relation?.following) {
         await supabase.from("follows").delete().eq("follower_id", user.id).eq("following_id", userId);
       } else if (relation?.requested) {

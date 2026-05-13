@@ -9,6 +9,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { mediaOwnerAvatar, mediaOwnerName } from "@/lib/firebaseMedia";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
+import { filterVisibleMediaRows } from "@/lib/visibility";
 
 const demoPosts = [
   {
@@ -72,14 +73,14 @@ const Explore = () => {
   const [viewing, setViewing] = useState<any | null>(null);
 
   const { data: explorePosts = [] } = useQuery({
-    queryKey: ["explore-posts"],
+    queryKey: ["explore-posts", user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("posts")
         .select("*, profiles!posts_user_id_fkey(username, avatar_url, is_verified)")
         .order("created_at", { ascending: false })
         .limit(60);
-      const visible = (data || []).filter((p: any) => !p.visibility || p.visibility === "public");
+      const visible = await filterVisibleMediaRows((data || []) as any[], user);
       return visible.length > 0 ? visible : demoPosts;
     },
   });

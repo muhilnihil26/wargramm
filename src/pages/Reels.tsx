@@ -15,6 +15,7 @@ import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName, mediaOwnerPayload } fro
 import { getYouTubeId } from "@/lib/youtube";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
+import { filterVisibleMediaRows } from "@/lib/visibility";
 
 const Reels = () => {
   const { user } = useAuth();
@@ -120,7 +121,7 @@ const Reels = () => {
         .order("created_at", { ascending: false });
       const localReels = readLocalReels();
       if (!data) return localReels;
-      const visibleReels = data.filter((r: any) => !r.is_removed);
+      const visibleReels = await filterVisibleMediaRows(data as any[], user);
       const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
       const cloudReels = visibleReels.map((r: any) => ({

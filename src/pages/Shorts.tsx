@@ -6,10 +6,13 @@ import { ReelItem } from "@/components/ReelItem";
 import { ShareSheet } from "@/components/ShareSheet";
 import { profileAvatar } from "@/lib/avatar";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { filterVisibleMediaRows } from "@/lib/visibility";
 
 const SHORTS_RE = /youtube\.com\/shorts\/([\w-]{11})/;
 
 const Shorts = () => {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [muted, setMuted] = useState(true);
   const [speed, setSpeed] = useState(1);
@@ -17,14 +20,14 @@ const Shorts = () => {
   const [shareItem, setShareItem] = useState<any | null>(null);
 
   const { data: shorts = [], refetch } = useQuery({
-    queryKey: ["shorts-feed"],
+    queryKey: ["shorts-feed", user?.id],
     staleTime: 5_000,
     queryFn: async () => {
       const { data } = await supabase
         .from("reels")
         .select("*")
         .order("created_at", { ascending: false });
-      const onlyShorts = (data || []).filter((r: any) => SHORTS_RE.test(r.video_url));
+      const onlyShorts = (await filterVisibleMediaRows((data || []) as any[], user)).filter((r: any) => SHORTS_RE.test(r.video_url));
       if (onlyShorts.length === 0) return [];
       const userIds = [...new Set(onlyShorts.map((r: any) => r.user_id))];
       const { data: profiles } = await supabase

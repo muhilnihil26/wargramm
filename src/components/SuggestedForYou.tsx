@@ -6,6 +6,7 @@ import { FollowButton } from "./FollowButton";
 import { VerifiedBadge } from "./VerifiedBadge";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
+import { listFirebaseProfiles, readFirebaseFollowingIds } from "@/lib/firebaseUserData";
 
 export function SuggestedForYou() {
   const { user } = useAuth();
@@ -16,16 +17,18 @@ export function SuggestedForYou() {
     enabled: !!user,
     queryFn: async () => {
       if (!user) return [];
-      const [{ data: existing }, { data: requested }] = isUuid(user.id)
+      const [{ data: existing }, { data: requested }, firebaseFollowing] = isUuid(user.id)
         ? await Promise.all([
             supabase.from("follows").select("following_id").eq("follower_id", user.id),
             supabase.from("follow_requests").select("target_id").eq("requester_id", user.id),
+            readFirebaseFollowingIds(user.id).catch(() => []),
           ])
-        : [{ data: [] }, { data: [] }];
+        : [{ data: [] }, { data: [] }, await readFirebaseFollowingIds(user.id).catch(() => [])];
       const excludeIds = new Set([
         user.id,
         ...((existing || []) as any[]).map((f) => f.following_id),
         ...((requested || []) as any[]).map((r) => r.target_id),
+        ...firebaseFollowing,
       ]);
 
       const { data: profiles } = await supabase
@@ -34,7 +37,13 @@ export function SuggestedForYou() {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      return (profiles || [])
+      const firebaseProfiles = await listFirebaseProfiles(user.id, 30).catch(() => []);
+      const byId = new Map<string, any>();
+      [...(firebaseProfiles || []), ...(profiles || [])].forEach((p: any) => {
+        if (!excludeIds.has(p.user_id) && !byId.has(p.user_id)) byId.set(p.user_id, p);
+      });
+
+      return [...byId.values()]
         .filter((p: any) => !excludeIds.has(p.user_id))
         .slice(0, 10);
     },

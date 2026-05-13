@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
+import { readFirebaseFollowState, readFirebasePublicProfile, saveFirebaseFollowState } from "@/lib/firebaseUserData";
 
 interface FollowButtonProps {
   targetUserId: string;
@@ -43,7 +44,16 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
         setState(localState);
         return;
       }
-      if (!isUuid(user.id) || !isUuid(targetUserId)) return;
+      if (!isUuid(user.id) || !isUuid(targetUserId)) {
+        const [firebaseState, targetProfile] = await Promise.all([
+          readFirebaseFollowState(user.id, targetUserId).catch(() => "none" as State),
+          readFirebasePublicProfile(targetUserId).catch(() => null),
+        ]);
+        if (cancelled) return;
+        setTargetPrivate(!!targetProfile?.is_private);
+        setState(firebaseState as State);
+        return;
+      }
       const [{ data: follow }, { data: prof }, { data: req }] = await Promise.all([
         supabase.from("follows").select("id").eq("follower_id", user.id).eq("following_id", targetUserId).maybeSingle(),
         supabase.from("profiles").select("is_private").eq("user_id", targetUserId).maybeSingle(),
@@ -85,6 +95,7 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
         if (!isUuid(user.id) || !isUuid(targetUserId)) {
           setState("requested");
           writeLocalFollow(user.id, targetUserId, "requested");
+          await saveFirebaseFollowState(user.id, targetUserId, "requested").catch(() => {});
           toast.success("Request saved");
           setLoading(false);
           return;
@@ -107,6 +118,9 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
         const { error } = isUuid(user.id) && isUuid(targetUserId)
           ? await supabase.from("follows").insert({ follower_id: user.id, following_id: targetUserId })
           : { error: null };
+        if (!isUuid(user.id) || !isUuid(targetUserId)) {
+          await saveFirebaseFollowState(user.id, targetUserId, "following").catch(() => {});
+        }
         if (!error) {
           if (isUuid(user.id) && isUuid(targetUserId)) await supabase.from("notifications").insert({ user_id: targetUserId, actor_id: user.id, type: "follow" });
           toast.success("Following");
@@ -114,6 +128,9 @@ export function FollowButton({ targetUserId, variant = "default", onChange }: Fo
           toast.success("Following saved");
         }
       }
+    }
+    if ((state === "following" || state === "requested") && (!isUuid(user.id) || !isUuid(targetUserId))) {
+      await saveFirebaseFollowState(user.id, targetUserId, "none").catch(() => {});
     }
     setLoading(false);
   };

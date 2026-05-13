@@ -4,6 +4,7 @@ import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { auth, googleProvider } from "@/integrations/firebase/config";
 import { getKnownProfile } from "@/lib/knownUsers";
+import { readClientProfile, saveClientProfile } from "@/lib/cloudProfile";
 
 interface AuthContextType {
   user: (User & { id: string }) | null;
@@ -70,6 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const knownProfile = getKnownProfile(user?.email);
       if (user && knownProfile && user.displayName !== knownProfile.fullName) {
         updateProfile(user, { displayName: knownProfile.fullName }).catch(() => {});
+      }
+      const normalized = withId(user);
+      if (normalized) {
+        readClientProfile(normalized)
+          .then((profile) => saveClientProfile(normalized, {
+            username: profile?.username || knownProfile?.username || normalized.displayName || normalized.email?.split("@")[0] || "user",
+            full_name: profile?.full_name || knownProfile?.fullName || normalized.displayName || "",
+            avatar_url: profile?.avatar_url || normalized.photoURL || "",
+            onboarded_at: profile?.onboarded_at || null,
+          }))
+          .catch(() => {});
       }
       setSignedInUser(user, setUser, setSession);
       setLoading(false);

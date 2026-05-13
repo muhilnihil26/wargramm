@@ -16,6 +16,7 @@ import { useNavigate } from "react-router-dom";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
+import { filterVisibleMediaRows } from "@/lib/visibility";
 
 const Index = () => {
   const { user } = useAuth();
@@ -26,7 +27,7 @@ const Index = () => {
 
   // Fetch stories (not expired). RLS now enforces visibility on the server.
   const { data: storyData = [] } = useQuery({
-    queryKey: ["stories"],
+    queryKey: ["stories", user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("stories")
@@ -35,14 +36,16 @@ const Index = () => {
         .order("created_at", { ascending: false });
 
       if (!data || data.length === 0) return [];
+      const visibleStories = await filterVisibleMediaRows(data as any[], user);
+      if (visibleStories.length === 0) return [];
 
-      const userIds = [...new Set(data.map((s: any) => s.user_id).filter(Boolean))];
+      const userIds = [...new Set(visibleStories.map((s: any) => s.user_id).filter(Boolean))];
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, username, avatar_url")
         .in("user_id", userIds);
 
-      return data.map((s: any) => ({
+      return visibleStories.map((s: any) => ({
         ...s,
         profile: profiles?.find((p: any) => p.user_id === s.user_id),
         owner_id: mediaOwnerId(s),
@@ -80,7 +83,7 @@ const Index = () => {
   const ownStoryAvatar = profileAvatar(myProfile?.avatar_url || user?.photoURL, user?.id, ownStoryName);
 
   const { data: dbPosts } = useQuery({
-    queryKey: ["feed-posts"],
+    queryKey: ["feed-posts", user?.id],
     queryFn: async () => {
       const { data: postsData } = await supabase
         .from("posts")
@@ -89,15 +92,17 @@ const Index = () => {
         .limit(50);
 
       if (!postsData) return [];
+      const visiblePosts = await filterVisibleMediaRows(postsData as any[], user);
+      if (visiblePosts.length === 0) return [];
 
-      const postIds = postsData.map((p: any) => p.id);
+      const postIds = visiblePosts.map((p: any) => p.id);
       const [{ data: likeCounts }, { data: commentCounts }, { data: userLikes }] = await Promise.all([
         supabase.from("likes").select("post_id").in("post_id", postIds),
         supabase.from("comments").select("post_id").in("post_id", postIds),
         user && isUuid(user.id) ? supabase.from("likes").select("post_id").eq("user_id", user.id).in("post_id", postIds) : Promise.resolve({ data: [] }),
       ]);
 
-      return postsData.map((p: any) => ({
+      return visiblePosts.map((p: any) => ({
         id: p.id,
         username: mediaOwnerName(p, p.profiles),
         userId: mediaOwnerId(p),
@@ -121,7 +126,7 @@ const Index = () => {
     refetchOnWindowFocus: true,
   });
   const { data: feedReels = [] } = useQuery({
-    queryKey: ["feed-reels"],
+    queryKey: ["feed-reels", user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from("reels")
@@ -129,9 +134,10 @@ const Index = () => {
         .order("created_at", { ascending: false })
         .limit(30);
       if (!data) return [];
-      const userIds = [...new Set(data.map((r: any) => r.user_id).filter(Boolean))];
+      const visibleReels = await filterVisibleMediaRows(data as any[], user);
+      const userIds = [...new Set(visibleReels.map((r: any) => r.user_id).filter(Boolean))];
       const { data: profiles } = await supabase.from("profiles").select("user_id, username, avatar_url").in("user_id", userIds);
-      return data.map((r: any) => ({
+      return visibleReels.map((r: any) => ({
         id: r.id,
         userId: mediaOwnerId(r),
         username: mediaOwnerName(r, profiles?.find((p: any) => p.user_id === r.user_id)),

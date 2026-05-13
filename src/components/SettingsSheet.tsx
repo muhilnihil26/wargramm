@@ -1,5 +1,5 @@
 ﻿import { useState, useEffect } from "react";
-import { X, ChevronRight, User, Bell, Lock, Palette, HelpCircle, LogOut, Shield, Info, Heart, Bookmark, Eye, Phone, KeyRound, Sun, Moon, BadgeCheck, Coins, BookOpen, FileText, Briefcase, Volume2 } from "lucide-react";
+import { X, ChevronRight, User, Bell, Lock, Palette, HelpCircle, LogOut, Shield, Info, Heart, Bookmark, Eye, Phone, KeyRound, Sun, Moon, BadgeCheck, Coins, BookOpen, FileText, Briefcase, Volume2, MessageCircle, Video, Search, UserPlus, Database, ImagePlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -304,6 +304,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
               )}
               <Row icon={Bell} label="View notifications" onClick={() => go("/notifications")} />
               <Row icon={Bookmark} label="Saved posts" onClick={() => go("/profile")} />
+              <Row icon={MessageCircle} label="Messages" onClick={() => go("/messages")} />
             </Section>
 
             <Section title="Account verification">
@@ -318,6 +319,14 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
             <Section title="App and media">
               <Row icon={Palette} label="Theme" hint={theme === "light" ? "Light" : "Dark"} onClick={() => setView("theme")} />
               <Row icon={Volume2} label="Ringtone" hint={ringtone === "silent" ? "Silent" : ringtone === "classic" ? "Classic" : "Wargram"} onClick={() => setView("ringtone")} />
+              <Row icon={Video} label="YouTube library" onClick={() => go("/youtube")} />
+              <Row icon={ImagePlus} label="Create post, reel, or story" onClick={() => go("/create")} />
+              <Row icon={Search} label="Explore people and posts" onClick={() => go("/explore")} />
+            </Section>
+
+            <Section title="Discovery">
+              <Row icon={UserPlus} label="Find new users" onClick={() => go("/explore")} />
+              <Row icon={Database} label="Cloud sync status" hint="Firebase" onClick={() => toast.info("Profiles, follows, chats, and saved posts sync through Firebase when Firebase rules allow it.")} />
             </Section>
 
             <Section title="More info and support">
