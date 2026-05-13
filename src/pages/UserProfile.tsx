@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowLeft, Grid3X3, Lock } from "lucide-react";
+import { ArrowLeft, Film, Grid3X3, Lock } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -12,8 +12,9 @@ import { ImageViewer } from "@/components/ImageViewer";
 import { profileAvatar } from "@/lib/avatar";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
-import { readFirebaseFollowCounts, readFirebaseFollowState, readFirebasePublicProfile, saveFirebaseFollowState } from "@/lib/firebaseUserData";
+import { readFirebaseFollowCounts, readFirebaseFollowState, readFirebaseMedia, readFirebasePublicProfile, saveFirebaseFollowState } from "@/lib/firebaseUserData";
 import { filterVisibleMediaRows } from "@/lib/visibility";
+import { mediaOwnerId } from "@/lib/firebaseMedia";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -72,12 +73,13 @@ const UserProfile = () => {
         ]);
         return { posts: (postCount || 0) + (reelCount || 0), followers: followCounts.followers, following: followCounts.following };
       }
-      const [{ count: postCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
+      const [{ count: postCount }, { count: reelCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", userId!),
+        supabase.from("reels").select("*", { count: "exact", head: true }).eq("user_id", userId!),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", userId!),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", userId!),
       ]);
-      return { posts: postCount || 0, followers: followerCount || 0, following: followingCount || 0 };
+      return { posts: (postCount || 0) + (reelCount || 0), followers: followerCount || 0, following: followingCount || 0 };
     },
     enabled: !!userId,
   });
@@ -107,7 +109,18 @@ const UserProfile = () => {
     enabled: !!userId && canSeePosts,
     queryFn: async () => {
       const { data } = await supabase.from("posts").select("*").eq(isUuid(userId) ? "user_id" : "firebase_uid", userId!).order("created_at", { ascending: false });
-      return filterVisibleMediaRows((data || []) as any[], user);
+      const { data: reels } = await supabase.from("reels").select("*").eq(isUuid(userId) ? "user_id" : "firebase_uid", userId!).order("created_at", { ascending: false });
+      const [firebasePosts, firebaseReels] = await Promise.all([
+        readFirebaseMedia("post").catch(() => []),
+        readFirebaseMedia("reel").catch(() => []),
+      ]);
+      const rows = [
+        ...(data || []).map((p: any) => ({ ...p, _kind: "post" })),
+        ...(reels || []).map((r: any) => ({ ...r, _kind: "reel", image_url: r.video_url, is_video: true })),
+        ...firebasePosts.filter((p: any) => mediaOwnerId(p) === userId).map((p: any) => ({ ...p, _kind: "post" })),
+        ...firebaseReels.filter((r: any) => mediaOwnerId(r) === userId).map((r: any) => ({ ...r, _kind: "reel", image_url: r.video_url, is_video: true })),
+      ].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0));
+      return filterVisibleMediaRows(rows as any[], user);
     },
   });
 
@@ -208,7 +221,8 @@ const UserProfile = () => {
         {canSeePosts ? (
           <div className="grid grid-cols-3 gap-0.5">
             {posts?.map((post: any) => (
-              <button key={post.id} onClick={() => setViewingPost(post)} className="aspect-square overflow-hidden bg-black">
+              <button key={post.id} onClick={() => setViewingPost(post)} className="relative aspect-square overflow-hidden bg-black">
+                {post._kind === "reel" && <Film className="absolute right-2 top-2 z-10 h-4 w-4 text-white drop-shadow" />}
                 {getYouTubeId(post.image_url) ? (
                   <img src={youtubeThumbnail(post.image_url) || post.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
                 ) : post.is_video ? (

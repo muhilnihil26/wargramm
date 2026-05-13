@@ -193,9 +193,12 @@ const Index = () => {
               <StoryCircle
                 username="Your story"
                 avatar={ownStoryAvatar}
-        hasStory={storyData.some((s: any) => mediaOwnerId(s) === user?.id)}
+                hasStory={storyData.some((s: any) => mediaOwnerId(s) === user?.id)}
                 isOwn
-                onClick={() => setShowAddStory(true)}
+                onClick={() => {
+                  if (storyData.some((s: any) => mediaOwnerId(s) === user?.id)) handleStoryClick(user!.id);
+                  else setShowAddStory(true);
+                }}
               />
             </div>
             {storyUsers

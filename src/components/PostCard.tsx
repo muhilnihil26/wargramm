@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
-import { saveFirebaseLike, saveFirebasePostBookmark } from "@/lib/firebaseUserData";
+import { deleteFirebaseMedia, saveFirebaseLike, saveFirebasePostBookmark } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
 
 import { VerifiedBadge } from "./VerifiedBadge";
@@ -245,16 +245,22 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       {showMore && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60" onClick={() => setShowMore(false)}>
           <div className="w-full max-w-lg rounded-t-2xl bg-background py-2" onClick={(e) => e.stopPropagation()}>
-            {isOwner && isSupabasePost && (
+            {isOwner && (
               <>
-                <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
-                  <Pencil className="h-5 w-5" /> Edit post
-                </button>
+                {isSupabasePost && (
+                  <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
+                    <Pencil className="h-5 w-5" /> Edit post
+                  </button>
+                )}
                 <button
                   onClick={async () => {
                     if (!confirm("Delete this post?")) return;
-                    const { error } = await supabase.from("posts").delete().eq("id", id!);
-                    if (error) { toast.error(error.message); return; }
+                    if (isSupabasePost) {
+                      const { error } = await supabase.from("posts").delete().eq("id", id!);
+                      if (error) { toast.error(error.message); return; }
+                    } else {
+                      await deleteFirebaseMedia("post", id!).catch(() => {});
+                    }
                     await logCloudAction(user, "post_delete", { post_id: id }).catch(() => {});
                     toast.success("Post deleted");
                     setShowMore(false);

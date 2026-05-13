@@ -36,6 +36,10 @@ export async function setWebPushPreference(enabled: boolean): Promise<boolean> {
     }
     localStorage.setItem(PREF_KEY, "true");
     localStorage.setItem(ASKED_KEY, "1");
+    try {
+      const { notificationService } = await import("@/services/notificationService");
+      await notificationService.initialize();
+    } catch {}
     try { new Notification("WarGram notifications enabled", { body: "We'll alert you here.", icon: "/favicon.ico" }); } catch {}
     toast.success("Notifications enabled");
     return true;

@@ -10,13 +10,16 @@ import { SettingsSheet } from "@/components/SettingsSheet";
 import { PostViewerModal } from "@/components/PostViewerModal";
 import { InviteSheet } from "@/components/InviteSheet";
 import { ImageViewer } from "@/components/ImageViewer";
+import { StoryViewer } from "@/components/StoryViewer";
 import { AppLoading } from "@/components/AppLoading";
 import { profileAvatar } from "@/lib/avatar";
 import { getKnownProfile } from "@/lib/knownUsers";
 import { isUuid } from "@/lib/ids";
 import { readClientProfile } from "@/lib/cloudProfile";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
-import { readFirebasePostBookmarks } from "@/lib/firebaseUserData";
+import { readFirebaseMedia, readFirebasePostBookmarks } from "@/lib/firebaseUserData";
+import { filterVisibleMediaRows } from "@/lib/visibility";
+import { mediaOwnerId } from "@/lib/firebaseMedia";
 
 type TabType = "posts" | "reels" | "saved";
 
@@ -27,6 +30,7 @@ const Profile = () => {
   const [showInvite, setShowInvite] = useState(false);
   const [viewingAvatar, setViewingAvatar] = useState(false);
   const [viewingPost, setViewingPost] = useState<any | null>(null);
+  const [showStoryViewer, setShowStoryViewer] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -59,7 +63,9 @@ const Profile = () => {
     queryFn: async () => {
       if (!user) return [];
       const { data } = await supabase.from("posts").select("*").eq(isUuid(user.id) ? "user_id" : "firebase_uid", user.id).order("created_at", { ascending: false });
-      return data || [];
+      const firebasePosts = await readFirebaseMedia("post").catch(() => []);
+      const mine = firebasePosts.filter((p: any) => mediaOwnerId(p) === user.id);
+      return [...(data || []), ...mine].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0));
     },
     enabled: !!user,
   });
@@ -70,7 +76,9 @@ const Profile = () => {
     queryFn: async () => {
       if (!user) return [];
       const { data } = await supabase.from("reels").select("*").eq(isUuid(user.id) ? "user_id" : "firebase_uid", user.id).order("created_at", { ascending: false });
-      return data || [];
+      const firebaseReels = await readFirebaseMedia("reel").catch(() => []);
+      const mine = firebaseReels.filter((r: any) => mediaOwnerId(r) === user.id);
+      return [...(data || []), ...mine].sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0));
     },
     enabled: !!user,
   });
@@ -117,12 +125,13 @@ const Profile = () => {
         ]);
         return { posts: (postCount || 0) + (reelCount || 0), followers: 0, following: 0 };
       }
-      const [{ count: postCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
+      const [{ count: postCount }, { count: reelCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", user.id),
+        supabase.from("reels").select("*", { count: "exact", head: true }).eq("user_id", user.id),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
       ]);
-      return { posts: postCount || 0, followers: followerCount || 0, following: followingCount || 0 };
+      return { posts: (postCount || 0) + (reelCount || 0), followers: followerCount || 0, following: followingCount || 0 };
     },
     enabled: !!user,
   });
@@ -132,6 +141,24 @@ const Profile = () => {
     { id: "reels" as TabType, icon: Film },
     { id: "saved" as TabType, icon: Bookmark },
   ];
+
+  const { data: ownStories = [] } = useQuery({
+    queryKey: ["profile-own-stories", user?.id],
+    queryFn: async () => {
+      if (!user) return [];
+      const { data } = await supabase
+        .from("stories")
+        .select("*")
+        .gte("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false });
+      const firebaseStories = await readFirebaseMedia("story").catch(() => []);
+      const live = [...(data || []), ...firebaseStories]
+        .filter((s: any) => mediaOwnerId(s) === user.id)
+        .filter((s: any) => !s.expires_at || new Date(s.expires_at).getTime() > Date.now());
+      return filterVisibleMediaRows(live as any[], user);
+    },
+    enabled: !!user,
+  });
 
   if (!user || !profile) {
     return <AppLoading />;
@@ -158,8 +185,8 @@ const Profile = () => {
           <div className="flex items-center gap-6">
             <button
               type="button"
-              onClick={() => profile.avatar_url && setViewingAvatar(true)}
-              className="rounded-full p-[3px] gradient-story focus:outline-none focus:ring-2 focus:ring-primary"
+              onClick={() => ownStories.length > 0 ? setShowStoryViewer(true) : profile.avatar_url && setViewingAvatar(true)}
+              className={`rounded-full p-[3px] ${ownStories.length > 0 ? "gradient-story" : "bg-border"} focus:outline-none focus:ring-2 focus:ring-primary`}
               aria-label="View profile photo"
             >
               <div className="rounded-full border-2 border-background">
@@ -274,6 +301,9 @@ const Profile = () => {
       {showInvite && <InviteSheet onClose={() => setShowInvite(false)} />}
       {viewingAvatar && profile.avatar_url && (
         <ImageViewer src={profile.avatar_url} alt={profile.username || ""} onClose={() => setViewingAvatar(false)} />
+      )}
+      {showStoryViewer && ownStories.length > 0 && (
+        <StoryViewer stories={ownStories as any[]} initialIndex={0} onClose={() => setShowStoryViewer(false)} />
       )}
 
       {showEditProfile && <EditProfileModal profile={profile} onClose={() => setShowEditProfile(false)} />}

@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
 import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
 import { logCloudAction } from "@/lib/cloudActions";
-import { saveFirebaseLike, saveFirebaseReelBookmark } from "@/lib/firebaseUserData";
+import { deleteFirebaseMedia, saveFirebaseLike, saveFirebaseReelBookmark } from "@/lib/firebaseUserData";
 
 interface ReelItemProps {
   id: string;
@@ -125,8 +125,12 @@ export function ReelItem({
   const handleDelete = async () => {
     if (!user || userId !== user.id) return;
     if (!confirm("Delete this reel?")) return;
-    const { error } = await supabase.from("reels").delete().eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (isSupabaseReel) {
+      const { error } = await supabase.from("reels").delete().eq("id", id);
+      if (error) { toast.error(error.message); return; }
+    } else {
+      await deleteFirebaseMedia("reel", id).catch(() => {});
+    }
     await logCloudAction(user, "reel_delete", { reel_id: id }).catch(() => {});
     toast.success("Reel deleted");
     setShowMore(false);
@@ -287,11 +291,13 @@ export function ReelItem({
       {showMore && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60" onClick={() => setShowMore(false)}>
           <div className="w-full max-w-lg rounded-t-2xl bg-background py-2" onClick={(e) => e.stopPropagation()}>
-            {user && userId === user.id && !isMock && isSupabaseReel && (
+            {user && userId === user.id && !isMock && (
               <>
-                <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
-                  <Pencil className="h-5 w-5" /> Edit reel
-                </button>
+                {isSupabaseReel && (
+                  <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
+                    <Pencil className="h-5 w-5" /> Edit reel
+                  </button>
+                )}
                 <button onClick={handleDelete} className="flex items-center gap-3 w-full px-5 py-3 text-left text-destructive">
                   <Trash2 className="h-5 w-5" /> Delete reel
                 </button>

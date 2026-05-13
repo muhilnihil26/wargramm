@@ -23,6 +23,10 @@ export async function saveFirebaseMedia(kind: MediaKind, user: User, payload: Re
   return row;
 }
 
+export async function deleteFirebaseMedia(kind: MediaKind, itemId: string) {
+  await remove(ref(database, `${mediaPath(kind)}/${itemId}`));
+}
+
 export async function readFirebaseMedia(kind: MediaKind) {
   const snapshot = await get(ref(database, mediaPath(kind)));
   const value = snapshot.val();

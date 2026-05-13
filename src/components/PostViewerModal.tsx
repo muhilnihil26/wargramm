@@ -1,11 +1,13 @@
 import { X } from "lucide-react";
 import { PostCard } from "./PostCard";
 import { profileAvatar } from "@/lib/avatar";
+import { mediaOwnerId } from "@/lib/firebaseMedia";
 
 interface PostViewerModalProps {
   post: {
     id: string;
-    user_id: string;
+    user_id?: string;
+    firebase_uid?: string;
     image_url: string;
     is_video?: boolean;
     caption?: string | null;
@@ -29,6 +31,7 @@ function getTimeAgo(dateStr: string): string {
 }
 
 export function PostViewerModal({ post, profile, onClose }: PostViewerModalProps) {
+  const ownerId = mediaOwnerId(post) || post.user_id || post.firebase_uid || "";
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 backdrop-blur-sm" onClick={onClose}>
       <button
@@ -44,9 +47,9 @@ export function PostViewerModal({ post, profile, onClose }: PostViewerModalProps
       >
         <PostCard
           id={post.id}
-          userId={post.user_id}
+          userId={ownerId}
           username={profile.username}
-          avatar={profileAvatar(profile.avatar_url, post.user_id, profile.username)}
+          avatar={profileAvatar(profile.avatar_url, ownerId, profile.username)}
           image={post.image_url}
           isVideo={!!post.is_video}
           caption={post.caption || ""}

@@ -7,6 +7,8 @@ import { notifyWeb } from "@/lib/webPush";
 import { isUuid } from "@/lib/ids";
 import { database } from "@/integrations/firebase/config";
 import { onValue, ref, update } from "firebase/database";
+import { playRingtone, stopRingtone } from "@/lib/ringtone";
+import { useNavigate } from "react-router-dom";
 
 const TYPE_TEXT: Record<string, string> = {
   like: "liked your post",
@@ -24,9 +26,11 @@ const TYPE_TEXT: Record<string, string> = {
 export function NotificationListener() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!user) return;
+    let callAudio: HTMLAudioElement | null = null;
 
     const firebaseNotifRef = ref(database, `firebaseNotifications/${user.id}`);
     const unsubscribeFirebase = onValue(firebaseNotifRef, (snapshot) => {
@@ -49,15 +53,23 @@ export function NotificationListener() {
         .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))[0] as any;
       if (!latest) return;
       const title = `Incoming ${latest.mode || "audio"} call`;
-      toast(title);
+      toast(title, {
+        action: {
+          label: "Open",
+          onClick: () => navigate(`/messages?to=${latest.from}`),
+        },
+      });
       notifyWeb("WarGram", title);
+      stopRingtone(callAudio);
+      callAudio = playRingtone(true);
     });
 
     if (!isUuid(user.id)) {
       return () => {
-        unsubscribeFirebase();
-        unsubscribeCalls();
-      };
+      unsubscribeFirebase();
+      unsubscribeCalls();
+      stopRingtone(callAudio);
+    };
     }
 
     const notifChannel = supabase
@@ -118,6 +130,7 @@ export function NotificationListener() {
     return () => {
       unsubscribeFirebase();
       unsubscribeCalls();
+      stopRingtone(callAudio);
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(msgChannel);
     };

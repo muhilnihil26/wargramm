@@ -17,6 +17,7 @@ import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { readFirebasePublicProfile, sendFirebaseNotification } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
 import { onValue, ref, remove, set } from "firebase/database";
+import { playRingtone, stopRingtone } from "@/lib/ringtone";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -137,6 +138,7 @@ const Messages = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ringtoneRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => { if (user) loadConversations(); }, [user]);
 
@@ -151,6 +153,8 @@ const Messages = () => {
         .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))[0] as any;
       if (!latest) return;
       const peer = await resolvePeerProfile(latest.from);
+      stopRingtone(ringtoneRef.current);
+      ringtoneRef.current = playRingtone(true);
       setIncomingCall({
         mode: latest.mode || "audio",
         from: latest.from,
@@ -378,6 +382,8 @@ const Messages = () => {
       unread_count: 0,
     });
     const mode = incomingCall.mode;
+    stopRingtone(ringtoneRef.current);
+    ringtoneRef.current = null;
     setIncomingCall(null);
     setCallInitiator(false);
     setCallMode(mode);
@@ -386,6 +392,8 @@ const Messages = () => {
   const rejectIncomingCall = async () => {
     if (!user || !incomingCall) return;
     await remove(ref(database, `callInvites/${user.id}/${incomingCall.conversationId}`)).catch(() => {});
+    stopRingtone(ringtoneRef.current);
+    ringtoneRef.current = null;
     setIncomingCall(null);
   };
 

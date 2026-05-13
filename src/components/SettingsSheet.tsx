@@ -11,6 +11,7 @@ import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
 import { readClientProfile, saveClientProfile } from "@/lib/cloudProfile";
 import { logCloudAction } from "@/lib/cloudActions";
+import { saveCustomRingtone } from "@/lib/ringtone";
 
 interface SettingsSheetProps {
   onClose: () => void;
@@ -238,7 +239,12 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
       .update({ notification_ringtone: ringtone } as any)
       .eq("user_id", user.id);
     setRingtoneSaving(false);
-    if (error) { toast.error("Apply the ringtone migration first, then try again."); return; }
+    if (error) {
+      toast.success("Ringtone saved on this device");
+      await logCloudAction(user, "settings_ringtone_update", { ringtone, local_fallback: true }).catch(() => {});
+      setView("main");
+      return;
+    }
     toast.success("Ringtone saved");
     await logCloudAction(user, "settings_ringtone_update", { ringtone }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
@@ -326,7 +332,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
 
             <Section title="App and media">
               <Row icon={Palette} label="Theme" hint={theme === "light" ? "Light" : "Dark"} onClick={() => setView("theme")} />
-              <Row icon={Volume2} label="Ringtone" hint={ringtone === "silent" ? "Silent" : ringtone === "classic" ? "Classic" : "Wargram"} onClick={() => setView("ringtone")} />
+              <Row icon={Volume2} label="Ringtone" hint={ringtone === "silent" ? "Silent" : ringtone === "classic" ? "Classic" : ringtone === "custom" ? "Custom" : "Wargram"} onClick={() => setView("ringtone")} />
               <Row icon={Video} label="YouTube library" onClick={() => go("/youtube")} />
               <Row icon={ImagePlus} label="Create post, reel, or story" onClick={() => go("/create")} />
               <Row icon={Search} label="Explore people and posts" onClick={() => go("/explore")} />
@@ -471,6 +477,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
               {[
                 { id: "wargram", label: "Wargram", hint: "Default app ringtone" },
                 { id: "classic", label: "Classic", hint: "Short classic alert" },
+                { id: "custom", label: "Custom", hint: "Use your own audio file on this device" },
                 { id: "silent", label: "Silent", hint: "No in-app ringing sound" },
               ].map((option) => (
                 <button
@@ -486,6 +493,25 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
                   {ringtone === option.id && <span className="text-xs text-primary font-bold">Active</span>}
                 </button>
               ))}
+              <label className="flex w-full cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border px-4 py-3 text-left">
+                <Volume2 className="h-5 w-5 text-foreground" />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-foreground">Upload your ringtone</p>
+                  <p className="text-xs text-muted-foreground">MP3, WAV, or M4A saved on this device.</p>
+                </div>
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    await saveCustomRingtone(file);
+                    setRingtone("custom");
+                    toast.success("Custom ringtone added");
+                  }}
+                />
+              </label>
               <button onClick={handleSaveRingtone} disabled={ringtoneSaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
                 {ringtoneSaving ? "Saving..." : "Save ringtone"}
               </button>
