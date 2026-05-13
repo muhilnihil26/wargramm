@@ -1055,6 +1055,18 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
     }
   };
 
+  const clearThisDeviceCache = () => {
+    if (!confirm("Clear old local WarGram cache on this browser? This removes local fallback posts/reels/chats/saves from this device only.")) return;
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("wargram-"))
+      .forEach((key) => {
+        if (["wargram-theme", "wargram-ringtone", "wargram-web-push-enabled", "wargram-web-push-asked"].includes(key)) return;
+        localStorage.removeItem(key);
+      });
+    toast.success("This device cache was cleared. Refreshing...");
+    setTimeout(() => window.location.reload(), 500);
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border bg-secondary/40 p-4">
@@ -1099,6 +1111,19 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
         >
           {targetRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
           {targetRunning ? "Deleting listed users..." : "Delete Listed Users and Media"}
+        </button>
+      </div>
+      <div className="rounded-2xl border border-border bg-secondary/40 p-4">
+        <h2 className="text-sm font-bold text-foreground">Clear this browser cache</h2>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Use this if old fallback posts, reels, chats, or saved users still appear on this device after cloud cleanup.
+        </p>
+        <button
+          onClick={clearThisDeviceCache}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2.5 text-sm font-bold text-foreground ring-1 ring-border"
+        >
+          <Trash2 className="h-4 w-4" />
+          Clear This Device Cache
         </button>
       </div>
     </div>

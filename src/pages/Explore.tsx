@@ -11,57 +11,6 @@ import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { filterVisibleMediaRows } from "@/lib/visibility";
 
-const demoPosts = [
-  {
-    id: "demo-fashion",
-    image_url: "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80",
-    caption: "Fresh street style ideas",
-    is_video: false,
-    user_id: "demo-fashion",
-    profiles: { username: "wargram_style", avatar_url: null, is_verified: true },
-  },
-  {
-    id: "demo-travel",
-    image_url: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80",
-    caption: "Places worth saving",
-    is_video: false,
-    user_id: "demo-travel",
-    profiles: { username: "travel_feed", avatar_url: null, is_verified: true },
-  },
-  {
-    id: "demo-music",
-    image_url: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=900&q=80",
-    caption: "Music moments",
-    is_video: false,
-    user_id: "demo-music",
-    profiles: { username: "music_daily", avatar_url: null, is_verified: false },
-  },
-  {
-    id: "demo-food",
-    image_url: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=900&q=80",
-    caption: "Food finds",
-    is_video: false,
-    user_id: "demo-food",
-    profiles: { username: "tasteboard", avatar_url: null, is_verified: false },
-  },
-  {
-    id: "demo-tech",
-    image_url: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
-    caption: "Creator setup inspiration",
-    is_video: false,
-    user_id: "demo-tech",
-    profiles: { username: "creator_lab", avatar_url: null, is_verified: false },
-  },
-  {
-    id: "demo-sport",
-    image_url: "https://images.unsplash.com/photo-1517649763962-0c623066013b?auto=format&fit=crop&w=900&q=80",
-    caption: "Weekend energy",
-    is_video: false,
-    user_id: "demo-sport",
-    profiles: { username: "sport_pulse", avatar_url: null, is_verified: false },
-  },
-];
-
 const topics = ["For you", "Trending", "Creators", "Music", "Travel", "Style"];
 
 const Explore = () => {
@@ -81,7 +30,7 @@ const Explore = () => {
         .order("created_at", { ascending: false })
         .limit(60);
       const visible = await filterVisibleMediaRows((data || []) as any[], user);
-      return visible.length > 0 ? visible : demoPosts;
+      return visible;
     },
   });
 

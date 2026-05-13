@@ -2,6 +2,7 @@ import { get, push, ref, remove, set } from "firebase/database";
 import { database } from "@/integrations/firebase/config";
 import type { User } from "firebase/auth";
 import { mediaOwnerPayload } from "./firebaseMedia";
+import { isDeletedUserEmail, isDeletedUserRow } from "./deletedUsers";
 
 type MediaKind = "post" | "reel" | "story";
 
@@ -29,6 +30,7 @@ export async function readFirebaseMedia(kind: MediaKind) {
   if (!value) return [];
   return Object.values(value)
     .filter(Boolean)
+    .filter((row: any) => !isDeletedUserRow(row))
     .sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)) as any[];
 }
 
@@ -115,7 +117,8 @@ export async function readFirebaseComments(kind: "post" | "reel", itemId: string
 
 export async function readFirebasePublicProfile(uid: string) {
   const snapshot = await get(ref(database, `profiles/${uid}`));
-  return snapshot.val();
+  const value = snapshot.val();
+  return isDeletedUserRow(value) ? null : value;
 }
 
 export type FirebaseFollowState = "none" | "following" | "requested";
@@ -192,6 +195,7 @@ export async function searchFirebaseProfiles(term: string, currentUserId?: strin
       email: profile.email || "",
       is_verified: !!profile.is_verified,
     }))
+    .filter((row) => !isDeletedUserEmail(row.email))
     .filter((row) => row.user_id !== currentUserId)
     .filter((row) => `${row.username} ${row.full_name} ${row.email}`.toLowerCase().includes(normalized))
     .slice(0, limit);
@@ -210,6 +214,7 @@ export async function listFirebaseProfiles(currentUserId?: string | null, limit 
       is_verified: !!profile.is_verified,
       updated_at: profile.updated_at || 0,
     }))
+    .filter((row) => !isDeletedUserEmail(row.email))
     .filter((row) => row.user_id !== currentUserId)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
     .slice(0, limit);
