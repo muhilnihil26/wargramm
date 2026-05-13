@@ -50,10 +50,18 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
   const isOwner = !!user && !!userId && user.id === userId && !!id;
 
   const toggleSave = async () => {
-    if (!user || !id || !isUuid(user.id)) {
+    if (!user || !id) return;
+    if (!isUuid(user.id)) {
       const next = !saved;
       setSaved(next);
       if (localSaveKey) localStorage.setItem(localSaveKey, String(next));
+      const table = supabase.from("saved_posts_client" as any);
+      if (next) {
+        const { error } = await table.upsert({ firebase_uid: user.id, post_id: id }, { onConflict: "firebase_uid,post_id" });
+        if (error) toast.info("Saved here. Apply cloud save migration to sync bookmarks.");
+      } else {
+        await table.delete().eq("firebase_uid", user.id).eq("post_id", id);
+      }
       return;
     }
     if (saved) {

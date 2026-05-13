@@ -32,6 +32,20 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
   const { data: profiles, error } = await profileQuery;
   if (!error) (profiles || []).forEach((p: any) => add(p));
 
+  const { data: clientProfiles } = await supabase
+    .from("firebase_profiles" as any)
+    .select("firebase_uid, email, username, full_name, avatar_url, is_verified")
+    .or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%`)
+    .limit(limit);
+  (clientProfiles || []).forEach((p: any) => add({
+    user_id: p.firebase_uid,
+    username: p.username || p.email?.split("@")[0] || "user",
+    full_name: p.full_name,
+    avatar_url: p.avatar_url,
+    is_verified: p.is_verified,
+    email: p.email,
+  }));
+
   const mediaColumns = "firebase_uid, firebase_email, firebase_display_name, firebase_photo_url";
   const mediaResults = await Promise.all([
     supabase.from("posts").select(mediaColumns).not("firebase_uid", "is", null).limit(100),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Send, Image, X, Check, CheckCheck, SmilePlus, Phone, Video as VideoIcon, Paperclip, FileText, Trash2 } from "lucide-react";
+import { ArrowLeft, Send, Image, X, Check, CheckCheck, SmilePlus, Phone, Video as VideoIcon, Paperclip, FileText, Trash2, Palette } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { isOnline } from "@/hooks/usePresence";
@@ -79,6 +79,34 @@ const mergeRemoteAndLocal = (roomId: string, remote: Message[]) => {
   return sortMessages([...local, ...remote]);
 };
 
+const loadClientCloudMessages = async (roomId: string): Promise<Message[]> => {
+  const { data, error } = await supabase
+    .from("firebase_messages" as any)
+    .select("*")
+    .eq("room_id", roomId)
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return (data || []).map((m: any) => ({
+    id: m.id,
+    sender_id: m.sender_id,
+    content: m.content || "",
+    image_url: m.image_url || null,
+    read: !!m.read,
+    created_at: m.created_at,
+  }));
+};
+
+const saveClientCloudMessage = async (roomId: string, message: Message, participants: string[]) => {
+  return supabase.from("firebase_messages" as any).insert({
+    room_id: roomId,
+    sender_id: message.sender_id,
+    participant_ids: participants,
+    content: message.content,
+    image_url: message.image_url || null,
+    read: message.read,
+  });
+};
+
 const readLocalConversations = (userId: string): Conversation[] => {
   try {
     const parsed = JSON.parse(localStorage.getItem(localConversationsKey(userId)) || "[]");
@@ -126,6 +154,8 @@ const Messages = () => {
   const [callInitiator, setCallInitiator] = useState(true);
   const [incomingCall, setIncomingCall] = useState<{ mode: "audio" | "video"; from: string } | null>(null);
   const [attachFile, setAttachFile] = useState<File | null>(null);
+  const [showBgPicker, setShowBgPicker] = useState(false);
+  const [chatBg, setChatBg] = useState(() => localStorage.getItem("wargram-chat-bg") || "default");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const attachInputRef = useRef<HTMLInputElement>(null);
@@ -197,7 +227,9 @@ const Messages = () => {
   useEffect(() => {
     if (!activeConvo || !user) return;
     if (isFirebaseRoom(activeConvo.id)) {
-      setMessages(readLocalMessages(activeConvo.id));
+      loadClientCloudMessages(activeConvo.id).then((remote) => {
+        setMessages(mergeRemoteAndLocal(activeConvo.id, remote));
+      });
       try {
         const unsubscribe = chatService.onMessages(activeConvo.id, (items) => {
           const remote = items.map((m) => ({
@@ -208,11 +240,11 @@ const Messages = () => {
             read: true,
             created_at: new Date(m.timestamp).toISOString(),
           }));
-          setMessages(mergeRemoteAndLocal(activeConvo.id, remote));
+          setMessages((prev) => sortMessages(mergeRemoteAndLocal(activeConvo.id, [...prev, ...remote])));
         });
         return unsubscribe;
       } catch {
-        toast.info("Chat sync is blocked. Local messages will still show here.");
+        toast.info("Realtime chat is blocked. Cloud messages will still load after migration.");
         return;
       }
     }
@@ -420,6 +452,7 @@ const Messages = () => {
       setMessages((prev) => sortMessages([...prev, localMessage]));
       rememberLocalConversation(user.id, activeConvo, localMessage);
       setNewMessage("");
+      await saveClientCloudMessage(activeConvo.id, localMessage, [activeConvo.user1_id, activeConvo.user2_id]).catch(() => {});
       try {
         await chatService.sendMessage(activeConvo.id, {
           senderId: user.id,
@@ -592,6 +625,14 @@ const Messages = () => {
     return new Date(d).toLocaleDateString();
   };
 
+  const chatBgClass = chatBg === "rose"
+    ? "bg-rose-50 dark:bg-rose-950/30"
+    : chatBg === "green"
+      ? "bg-emerald-50 dark:bg-emerald-950/30"
+      : chatBg === "blue"
+        ? "bg-sky-50 dark:bg-sky-950/30"
+        : "bg-secondary/40 dark:bg-background";
+
   // Chat view (WhatsApp-like)
   if (activeConvo) {
     return (
@@ -624,12 +665,33 @@ const Messages = () => {
           <button onClick={() => startCall("video")} aria-label="Video call" className="flex h-10 w-10 items-center justify-center rounded-full text-primary hover:bg-secondary">
             <VideoIcon className="h-5 w-5" />
           </button>
+          <button onClick={() => setShowBgPicker((v) => !v)} aria-label="Chat background" className="flex h-10 w-10 items-center justify-center rounded-full text-primary hover:bg-secondary">
+            <Palette className="h-5 w-5" />
+          </button>
           <button onClick={() => startCall("audio")} aria-label="Voice call" className="flex h-10 w-10 items-center justify-center rounded-full text-primary hover:bg-secondary">
             <Phone className="h-5 w-5" />
           </button>
         </header>
+        {showBgPicker && (
+          <div className="flex items-center gap-2 border-b border-border bg-background px-4 py-2">
+            {[
+              { id: "default", label: "Default", cls: "bg-secondary" },
+              { id: "rose", label: "Rose", cls: "bg-rose-300" },
+              { id: "green", label: "Green", cls: "bg-emerald-300" },
+              { id: "blue", label: "Blue", cls: "bg-sky-300" },
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => { setChatBg(item.id); localStorage.setItem("wargram-chat-bg", item.id); setShowBgPicker(false); }}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${chatBg === item.id ? "border-primary text-primary" : "border-border text-foreground"}`}
+              >
+                <span className={`h-3 w-3 rounded-full ${item.cls}`} /> {item.label}
+              </button>
+            ))}
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto bg-secondary/40 px-3 py-3 dark:bg-background">
+        <div className={`flex-1 overflow-y-auto px-3 py-3 ${chatBgClass}`}>
           {messages.map((msg) => {
             const isMine = msg.sender_id === user?.id;
             const msgReactions = reactions.filter((r) => r.message_id === msg.id);

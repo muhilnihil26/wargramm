@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
-import { updateLocalProfile } from "@/lib/localProfile";
+import { saveClientProfile } from "@/lib/cloudProfile";
 
 interface EditProfileModalProps {
   profile: {
@@ -49,9 +49,12 @@ export function EditProfileModal({ profile, onClose }: EditProfileModalProps) {
       let avatarUrl = profile.avatar_url;
 
       if (!isUuid(user.id)) {
-        updateLocalProfile(user, { username, full_name: fullName, bio, website, avatar_url: avatarPreview || avatarUrl || "", instagram_username: instagram.replace(/^@/, "").trim() || null });
+        if (avatarFile) avatarUrl = await fileToDataUrl(avatarFile);
+        else avatarUrl = avatarPreview || avatarUrl || "";
+        const { error } = await saveClientProfile(user, { username, full_name: fullName, bio, website, avatar_url: avatarUrl || "", instagram_username: instagram.replace(/^@/, "").trim() || null });
         queryClient.invalidateQueries({ queryKey: ["profile"] });
-        toast.success("Profile updated!");
+        queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
+        toast.success(error ? "Profile updated here. Apply cloud migration to sync it." : "Profile updated!");
         onClose();
         return;
       }
@@ -139,4 +142,13 @@ export function EditProfileModal({ profile, onClose }: EditProfileModalProps) {
       </div>
     </div>
   );
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { X, ChevronRight, User, Bell, Lock, Palette, HelpCircle, LogOut, Shield, Info, Heart, Bookmark, Eye, Phone, KeyRound, Sun, Moon, BadgeCheck, Coins, BookOpen, FileText, Briefcase, Volume2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { getWebPushPreference, setWebPushPreference, getWebPushStatus } from "@/lib/webPush";
 import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
-import { readLocalProfile, updateLocalProfile } from "@/lib/localProfile";
+import { readClientProfile, saveClientProfile } from "@/lib/cloudProfile";
 
 interface SettingsSheetProps {
   onClose: () => void;
@@ -93,7 +93,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     queryKey: ["my-verification-row", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
+      if (!user || !isUuid(user.id)) return readClientProfile(user) as any;
       const { data } = await supabase.from("profiles").select("is_verified, verification_status").eq("user_id", user!.id).maybeSingle();
       return data as { is_verified: boolean | null; verification_status: string | null } | null;
     },
@@ -103,7 +103,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     queryKey: ["profile-settings", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      if (!user || !isUuid(user.id)) return readLocalProfile(user) as any;
+      if (!user || !isUuid(user.id)) return readClientProfile(user) as any;
       const { data, error } = await supabase.from("profiles").select("phone, is_private, show_activity, notification_ringtone").eq("user_id", user!.id).maybeSingle();
       if (error) {
         const fallback = await supabase.from("profiles").select("phone, is_private, show_activity").eq("user_id", user!.id).maybeSingle();
@@ -174,7 +174,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     }
     setPhoneSaving(true);
     if (!isUuid(user.id)) {
-      updateLocalProfile(user, { phone: cleaned || null });
+      await saveClientProfile(user, { phone: cleaned || null });
       setPhoneSaving(false);
       toast.success("Phone saved");
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
@@ -194,7 +194,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     if (!user) return;
     setPrivacySaving(true);
     if (!isUuid(user.id)) {
-      updateLocalProfile(user, { is_private: isPrivate, show_activity: showActivity });
+      await saveClientProfile(user, { is_private: isPrivate, show_activity: showActivity });
       setPrivacySaving(false);
       toast.success("Privacy updated");
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
@@ -219,7 +219,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     setRingtoneSaving(true);
     localStorage.setItem("wargram-ringtone", ringtone);
     if (!isUuid(user.id)) {
-      updateLocalProfile(user, { notification_ringtone: ringtone });
+      await saveClientProfile(user, { notification_ringtone: ringtone });
       setRingtoneSaving(false);
       toast.success("Ringtone saved");
       queryClient.invalidateQueries({ queryKey: ["profile-settings"] });
@@ -298,7 +298,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
               {getWebPushStatus() === "denied" && (
                 <div className="mx-4 my-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3">
                   <p className="text-xs text-foreground">
-                    Notifications are blocked. Open your browser site settings (lock icon in the address bar) → Notifications → <span className="font-bold">Allow</span>, then refresh.
+                    Notifications are blocked. Open your browser site settings (lock icon in the address bar) â†’ Notifications â†’ <span className="font-bold">Allow</span>, then refresh.
                   </p>
                 </div>
               )}
@@ -340,15 +340,15 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
                   <p className="text-sm text-foreground text-center">Log out of WarGram?</p>
                   <div className="flex gap-2">
                     <button onClick={() => setConfirmingSignOut(false)} className="flex-1 rounded-lg bg-secondary py-2 text-sm font-semibold text-foreground">Cancel</button>
-                    <button onClick={handleSignOut} className="flex-1 rounded-lg bg-destructive py-2 text-sm font-semibold text-destructive-foreground">​Discover The World</button>
+                    <button onClick={handleSignOut} className="flex-1 rounded-lg bg-destructive py-2 text-sm font-semibold text-destructive-foreground">Log out</button>
                   </div>
                 </div>
               ) : (
-                <Row icon={LogOut} label="​Discover The World" danger onClick={() => setConfirmingSignOut(true)} />
+                <Row icon={LogOut} label="Log out" danger onClick={() => setConfirmingSignOut(true)} />
               )}
             </div>
 
-            <p className="text-center text-[10px] text-muted-foreground py-3">WarGram · v1.0</p>
+            <p className="text-center text-[10px] text-muted-foreground py-3">WarGram Â· v1.0</p>
           </>
         )}
 
@@ -366,7 +366,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
                 <input type="password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary" />
               </div>
               <button onClick={handleChangePassword} disabled={pwSaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-                {pwSaving ? "Updating…" : "Update password"}
+                {pwSaving ? "Updatingâ€¦" : "Update password"}
               </button>
             </div>
           </>
@@ -382,7 +382,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
                 <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" className="mt-1 w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary" />
               </div>
               <button onClick={handleSavePhone} disabled={phoneSaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-                {phoneSaving ? "Saving…" : "Save"}
+                {phoneSaving ? "Savingâ€¦" : "Save"}
               </button>
             </div>
           </>
@@ -441,7 +441,7 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
               </button>
 
               <button onClick={handleSavePrivacy} disabled={privacySaving} className="w-full rounded-lg bg-primary py-2.5 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-                {privacySaving ? "Saving…" : "Save"}
+                {privacySaving ? "Savingâ€¦" : "Save"}
               </button>
             </div>
           </>
@@ -479,3 +479,6 @@ export function SettingsSheet({ onClose, onEditProfile }: SettingsSheetProps) {
     </div>
   );
 }
+
+
+

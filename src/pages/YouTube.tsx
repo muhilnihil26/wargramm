@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Play, Trash2, Plus, Loader2, Scissors, Send, Image as ImageIcon, Film, Zap, ListVideo, LayoutGrid, List, ArrowDownUp, Search } from "lucide-react";
+import { ArrowLeft, Play, Trash2, Plus, Loader2, Scissors, Send, Image as ImageIcon, Film, Zap, ListVideo, LayoutGrid, List, ArrowDownUp, Search, Circle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -46,7 +46,8 @@ const YouTube = () => {
   // share-from-library state
   const [shareItem, setShareItem] = useState<any | null>(null);
   const [shareCaption, setShareCaption] = useState("");
-  const [shareTarget, setShareTarget] = useState<"reel" | "post" | "short">("reel");
+  const [shareTarget, setShareTarget] = useState<"reel" | "post" | "short" | "story">("reel");
+  const [shareVisibility, setShareVisibility] = useState<"public" | "followers" | "only_me">("public");
   const [posting, setPosting] = useState(false);
 
   // view adjustments
@@ -191,7 +192,7 @@ const YouTube = () => {
 
   const handleShare = async () => {
     if (!user || !shareItem) return;
-    if (shareItem.is_playlist) { toast.error("Playlists can't be shared as a Post/Reel"); return; }
+    if (shareItem.is_playlist) { toast.error("Playlists can't be shared as a Post/Reel/Story"); return; }
     setPosting(true);
     try {
       if (shareTarget === "reel" || shareTarget === "short") {
@@ -204,6 +205,7 @@ const YouTube = () => {
           ...mediaOwnerPayload(user),
           video_url: videoUrl,
           caption: shareCaption,
+          visibility: shareVisibility,
           music_url: shareItem.url,
           music_title: shareItem.title,
           music_start: shareItem.trim_start || 0,
@@ -211,12 +213,13 @@ const YouTube = () => {
         } as any);
         if (error) throw error;
         toast.success(shareTarget === "short" ? "Posted to Shorts!" : "Posted to Reels!");
-      } else {
+      } else if (shareTarget === "post") {
         const { error } = await supabase.from("posts").insert({
           ...mediaOwnerPayload(user),
           image_url: shareItem.url,
           is_video: true,
           caption: shareCaption || shareItem.title,
+          visibility: shareVisibility,
           music_url: shareItem.url,
           music_title: shareItem.title,
           music_start: shareItem.trim_start || 0,
@@ -224,9 +227,20 @@ const YouTube = () => {
         } as any);
         if (error) throw error;
         toast.success("Posted to Home!");
+      } else {
+        const { error } = await supabase.from("stories").insert({
+          ...mediaOwnerPayload(user),
+          image_url: shareItem.url,
+          is_video: true,
+          caption: shareCaption || shareItem.title,
+          visibility: shareVisibility,
+          expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        } as any);
+        if (error) throw error;
+        toast.success("Posted to Story!");
       }
       const dest = shareTarget === "short" ? "/shorts" : shareTarget === "reel" ? "/reels" : "/";
-      setShareItem(null); setShareCaption("");
+      setShareItem(null); setShareCaption(""); setShareVisibility("public");
       navigate(dest);
     } catch (e: any) {
       toast.error(e.message);
@@ -397,6 +411,11 @@ const YouTube = () => {
                           <ImageIcon className="h-2.5 w-2.5" /> Post
                         </button>
                       )}
+                      {!it.is_playlist && (
+                        <button onClick={() => { setShareItem(it); setShareTarget("story"); }} className="inline-flex items-center gap-1 rounded-full bg-secondary border border-border px-2 py-0.5 text-[10px] font-semibold text-foreground">
+                          <Circle className="h-2.5 w-2.5" /> Story
+                        </button>
+                      )}
                       <button onClick={() => handleDelete(it.id)} className="ml-auto text-destructive">
                         <Trash2 className="h-3 w-3" />
                       </button>
@@ -452,6 +471,10 @@ const YouTube = () => {
                             className="inline-flex items-center gap-1 rounded-full bg-secondary border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground">
                             <ImageIcon className="h-3 w-3" /> Post
                           </button>
+                          <button onClick={() => { setShareItem(it); setShareTarget("story"); }}
+                            className="inline-flex items-center gap-1 rounded-full bg-secondary border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground">
+                            <Circle className="h-3 w-3" /> Story
+                          </button>
                         </>
                       )}
                       <button onClick={() => setViewer(it)} className="inline-flex items-center gap-1 rounded-full bg-secondary border border-border px-2.5 py-1 text-[11px] font-semibold text-foreground">
@@ -499,7 +522,7 @@ const YouTube = () => {
       {shareItem && (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/70" onClick={() => setShareItem(null)}>
           <div className="w-full max-w-lg rounded-t-2xl bg-background p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
-            <p className="text-sm font-bold text-foreground">Share to {shareTarget === "reel" ? "Reels" : shareTarget === "short" ? "Shorts" : "Home Feed"}</p>
+            <p className="text-sm font-bold text-foreground">Share to {shareTarget === "reel" ? "Reels" : shareTarget === "short" ? "Shorts" : shareTarget === "story" ? "Story" : "Home Feed"}</p>
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
               <iframe
                 src={youtubeEmbedUrl(shareItem.url, { start: shareItem.trim_start, end: shareItem.trim_end })}
@@ -511,6 +534,17 @@ const YouTube = () => {
             </div>
             <textarea value={shareCaption} onChange={(e) => setShareCaption(e.target.value)} rows={2} placeholder="Add a caption…"
               className="w-full resize-none rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:border-primary" />
+            <div className="flex gap-2">
+              {(["public", "followers", "only_me"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setShareVisibility(v)}
+                  className={`flex-1 rounded-full border px-3 py-2 text-xs font-semibold ${shareVisibility === v ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-foreground"}`}
+                >
+                  {v === "public" ? "Everyone" : v === "followers" ? "Followers" : "Only me"}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setShareItem(null)} className="flex-1 rounded-lg bg-secondary py-2.5 text-sm font-semibold text-foreground">Cancel</button>
               <button onClick={handleShare} disabled={posting}

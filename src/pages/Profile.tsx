@@ -14,6 +14,8 @@ import { AppLoading } from "@/components/AppLoading";
 import { profileAvatar } from "@/lib/avatar";
 import { getKnownProfile } from "@/lib/knownUsers";
 import { isUuid } from "@/lib/ids";
+import { readClientProfile } from "@/lib/cloudProfile";
+import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
 
 type TabType = "posts" | "reels" | "saved";
 
@@ -32,16 +34,7 @@ const Profile = () => {
     queryFn: async () => {
       if (!user) return null;
       if (!isUuid(user.id)) {
-        const knownProfile = getKnownProfile(user.email);
-        return {
-          user_id: user.id,
-          username: knownProfile?.username || user.email?.split("@")[0] || "user",
-          full_name: knownProfile?.fullName || user.displayName || "",
-          avatar_url: user.photoURL || "",
-          bio: "",
-          is_private: false,
-          is_verified: false,
-        };
+        return readClientProfile(user);
       }
       const { data } = await supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
       const knownProfile = getKnownProfile(user.email);
@@ -92,6 +85,26 @@ const Profile = () => {
       return posts || [];
     },
     enabled: !!user,
+  });
+
+  const { data: clientSavedPosts } = useQuery({
+    queryKey: ["client-saved-posts", user?.id],
+    queryFn: async () => {
+      if (!user || isUuid(user.id)) return [];
+      const localIds = Object.keys(localStorage)
+        .filter((key) => key.startsWith(`wargram-local-save:post:${user.id}:`) && localStorage.getItem(key) === "true")
+        .map((key) => key.split(":").pop())
+        .filter(Boolean) as string[];
+      const { data: rows } = await supabase
+        .from("saved_posts_client" as any)
+        .select("post_id")
+        .eq("firebase_uid", user.id);
+      const ids = [...new Set([...(rows || []).map((r: any) => r.post_id), ...localIds])];
+      if (ids.length === 0) return [];
+      const { data: posts } = await supabase.from("posts").select("*").in("id", ids);
+      return posts || [];
+    },
+    enabled: !!user && !isUuid(user.id),
   });
 
   const { data: stats } = useQuery({
@@ -202,7 +215,9 @@ const Profile = () => {
           <div className="grid grid-cols-3 gap-0.5">
             {(userPosts || []).map((post: any) => (
               <button key={post.id} onClick={() => setViewingPost(post)} className="relative aspect-square overflow-hidden bg-black">
-                {post.is_video ? (
+                {getYouTubeId(post.image_url) ? (
+                  <img src={youtubeThumbnail(post.image_url) || post.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : post.is_video ? (
                   <video src={post.image_url} className="h-full w-full object-cover" muted preload="metadata" />
                 ) : (
                   <img src={post.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -220,7 +235,11 @@ const Profile = () => {
           <div className="grid grid-cols-3 gap-0.5">
             {(userReels || []).map((r: any) => (
               <button key={r.id} onClick={() => setViewingPost({ ...r, image_url: r.video_url, is_video: true })} className="relative aspect-[9/16] overflow-hidden bg-black">
-                <video src={r.video_url} className="h-full w-full object-cover" muted preload="metadata" />
+                {getYouTubeId(r.video_url) ? (
+                  <img src={youtubeThumbnail(r.video_url) || r.video_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : (
+                  <video src={r.video_url} className="h-full w-full object-cover" muted preload="metadata" />
+                )}
                 <Film className="absolute right-2 top-2 h-4 w-4 text-white drop-shadow" />
               </button>
             ))}
@@ -233,12 +252,12 @@ const Profile = () => {
         )}
         {activeTab === "saved" && (
           <div className="grid grid-cols-3 gap-0.5">
-            {(savedPosts || []).map((p: any) => (
+            {((isUuid(user.id) ? savedPosts : clientSavedPosts) || []).map((p: any) => (
               <button key={p.id} onClick={() => setViewingPost(p)} className="relative aspect-square overflow-hidden bg-black">
-                <img src={p.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                <img src={youtubeThumbnail(p.image_url) || p.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
               </button>
             ))}
-            {(!savedPosts || savedPosts.length === 0) && (
+            {(!(isUuid(user.id) ? savedPosts : clientSavedPosts) || (isUuid(user.id) ? savedPosts : clientSavedPosts)!.length === 0) && (
               <div className="col-span-3 flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Bookmark className="h-12 w-12 mb-2" strokeWidth={1} /><p className="text-sm">No saved posts</p>
               </div>
