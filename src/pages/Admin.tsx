@@ -24,19 +24,6 @@ const QUICK_PROMPTS = [
   "Set max caption length to 1500 and feed page size to 15",
 ];
 
-const TARGET_DELETE_EMAILS = [
-  "infantjeril442@gmail.com",
-  "nihilyadesh2015@gmail.com",
-  "sanjanashreer682@gmail.com",
-  "mithresh0205@gmail.com",
-  "yazhinimanikumar@gmail.com",
-  "mmugeshdharan@gmail.com",
-  "5b.vrrithikamfts@gmail.com",
-  "ananya2505123456@gmail.com",
-  "dharunashok011@gmail.com",
-  "tamilselvanask7@gmail.com",
-];
-
 const Admin = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -149,17 +136,33 @@ const Admin = () => {
   const deletePost = async (id: string) => {
     const reason = prompt("Reason for removing this post/video:") || "Removed by admin";
     const { error } = await supabase.from("posts").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      const canHardDelete = /is_removed|removed_|schema cache|column/i.test(error.message || "");
+      if (!canHardDelete) { toast.error(error.message); return; }
+      const fallback = await supabase.from("posts").delete().eq("id", id);
+      if (fallback.error) { toast.error(fallback.error.message); return; }
+      toast.success("Post deleted");
+    } else {
+      toast.success("Post removed with reason");
+    }
     queryClient.invalidateQueries({ queryKey: ["admin-posts"] });
-    toast.success("Post removed with reason");
+    queryClient.invalidateQueries({ queryKey: ["feed-posts"] });
   };
   const deleteReel = async (id: string) => {
     const reason = prompt("Reason for removing this reel/video:") || "Removed by admin";
     const { error } = await supabase.from("reels").update({ is_removed: true, removed_reason: reason, removed_by: adminUuid, removed_by_firebase_uid: user?.uid || user?.id || null, removed_at: new Date().toISOString() } as any).eq("id", id);
-    if (error) { toast.error(error.message); return; }
+    if (error) {
+      const canHardDelete = /is_removed|removed_|schema cache|column/i.test(error.message || "");
+      if (!canHardDelete) { toast.error(error.message); return; }
+      const fallback = await supabase.from("reels").delete().eq("id", id);
+      if (fallback.error) { toast.error(fallback.error.message); return; }
+      toast.success("Reel deleted");
+    } else {
+      toast.success("Reel removed with reason");
+    }
     queryClient.invalidateQueries({ queryKey: ["admin-reels"] });
     queryClient.invalidateQueries({ queryKey: ["reels"] });
-    toast.success("Reel removed with reason");
+    queryClient.invalidateQueries({ queryKey: ["feed-reels"] });
   };
   const deleteMusic = async (id: string) => { await supabase.from("music").delete().eq("id", id); queryClient.invalidateQueries({ queryKey: ["admin-music"] }); toast.success("Track removed"); };
 
@@ -963,7 +966,6 @@ export default Admin;
 
 function FirebaseCloudMigration({ adminId }: { adminId: string }) {
   const [running, setRunning] = useState(false);
-  const [targetRunning, setTargetRunning] = useState(false);
   const isHardcodedAdmin = adminId === "nxANfkUL63MSTv300eH6rSICw9w1";
 
   const runCleanup = async () => {
@@ -995,63 +997,6 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
       toast.error(error?.message || "Firebase cleanup failed. Deploy database rules first.");
     } finally {
       setRunning(false);
-    }
-  };
-
-  const removeByKnownEmails = async () => {
-    if (!isHardcodedAdmin) {
-      toast.error("Only the configured Firebase admin can run this migration.");
-      return;
-    }
-    if (!confirm(`Delete these ${TARGET_DELETE_EMAILS.length} listed users and their Firebase posts/reels/stories from app data?`)) return;
-    setTargetRunning(true);
-    try {
-      const emailSet = new Set(TARGET_DELETE_EMAILS.map((e) => e.toLowerCase()));
-      const profilesSnap = await get(ref(database, "profiles"));
-      const profiles = profilesSnap.val() || {};
-      const targetIds = Object.entries(profiles)
-        .filter(([, profile]: [string, any]) => emailSet.has(String(profile?.email || "").toLowerCase()))
-        .map(([uid]) => uid);
-
-      const removeMediaByEmail = async (path: string) => {
-        const snap = await get(ref(database, path));
-        const rows = snap.val() || {};
-        const removals = Object.entries(rows)
-          .filter(([, row]: [string, any]) => emailSet.has(String(row?.firebase_email || row?.email || "").toLowerCase()) || targetIds.includes(String(row?.firebase_uid || "")))
-          .map(([id]) => remove(ref(database, `${path}/${id}`)));
-        await Promise.all(removals);
-        return removals.length;
-      };
-
-      const [postCount, reelCount, storyCount] = await Promise.all([
-        removeMediaByEmail("firebasePosts"),
-        removeMediaByEmail("firebaseReels"),
-        removeMediaByEmail("firebaseStories"),
-      ]);
-
-      await Promise.all(targetIds.flatMap((uid) => [
-        remove(ref(database, `profiles/${uid}`)),
-        remove(ref(database, `follows/${uid}`)),
-        remove(ref(database, `followers/${uid}`)),
-        remove(ref(database, `followRequests/${uid}`)),
-        remove(ref(database, `bookmarks/${uid}`)),
-        remove(ref(database, `youtubeLibrary/${uid}`)),
-        remove(ref(database, `callInvites/${uid}`)),
-        remove(ref(database, `pushTokens/${uid}`)),
-      ]));
-
-      await logCloudAction({ id: adminId, uid: adminId } as any, "admin_target_email_cleanup", {
-        emails: TARGET_DELETE_EMAILS,
-        removed_profiles: targetIds.length,
-        removed_posts: postCount,
-        removed_reels: reelCount,
-        removed_stories: storyCount,
-      }).catch(() => {});
-      toast.success(`Removed ${targetIds.length} users, ${postCount} posts, ${reelCount} reels, ${storyCount} stories from Firebase app data.`);
-    } catch (error: any) {
-      toast.error(error?.message || "Target cleanup failed. Deploy database rules first.");
-    } finally {
-      setTargetRunning(false);
     }
   };
 
@@ -1095,23 +1040,6 @@ function FirebaseCloudMigration({ adminId }: { adminId: string }) {
         {!isHardcodedAdmin && (
           <p className="mt-2 text-[11px] text-muted-foreground">Sign in as the configured Firebase admin to enable this.</p>
         )}
-      </div>
-      <div className="rounded-2xl border border-border bg-secondary/40 p-4">
-        <h2 className="text-sm font-bold text-foreground">Delete listed old users</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Removes the exact emails you listed from Firebase app data and deletes their Firebase backup posts, reels, and stories.
-        </p>
-        <div className="mt-3 max-h-40 overflow-y-auto rounded-xl bg-background p-3 text-[11px] text-muted-foreground">
-          {TARGET_DELETE_EMAILS.map((email) => <p key={email}>{email}</p>)}
-        </div>
-        <button
-          onClick={removeByKnownEmails}
-          disabled={targetRunning || !isHardcodedAdmin}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2.5 text-sm font-bold text-destructive-foreground disabled:opacity-50"
-        >
-          {targetRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-          {targetRunning ? "Deleting listed users..." : "Delete Listed Users and Media"}
-        </button>
       </div>
       <div className="rounded-2xl border border-border bg-secondary/40 p-4">
         <h2 className="text-sm font-bold text-foreground">Clear this browser cache</h2>

@@ -1,7 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import { listVisibleKnownProfiles } from "./knownUsers";
 import { searchFirebaseProfiles } from "./firebaseUserData";
-import { isDeletedUserRow } from "./deletedUsers";
 
 type UserRow = {
   user_id: string;
@@ -21,7 +20,6 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
 
   const add = (row: UserRow | null | undefined) => {
     if (!row?.user_id || row.user_id === currentUserId || byId.has(row.user_id)) return;
-    if (isDeletedUserRow(row)) return;
     const haystack = `${row.username || ""} ${row.full_name || ""} ${row.email || ""}`.toLowerCase();
     if (!haystack.includes(normalized)) return;
     byId.set(row.user_id, row);

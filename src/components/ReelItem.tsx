@@ -47,6 +47,7 @@ export function ReelItem({
   const [showComments, setShowComments] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
   const localLikeKey = user ? `wargram-local-like:reel:${user.id}:${id}` : "";
   const localSaveKey = user ? `wargram-local-save:reel:${user.id}:${id}` : "";
   const [localLiked, setLocalLiked] = useState(!!localLikeKey && localStorage.getItem(localLikeKey) === "true");
@@ -169,12 +170,22 @@ export function ReelItem({
     v.muted = globalMuted || !!musicUrl;
   }, [globalMuted, musicUrl]);
 
+  useEffect(() => {
+    setMediaFailed(false);
+  }, [video]);
+
   const likes = Math.max(0, (likeInfo?.count ?? 0) + localLikeOffset);
   const liked = localLiked || (likeInfo?.liked ?? false);
 
   return (
     <div ref={containerRef} className="relative snap-start bg-black w-full" style={{ height: "100dvh", scrollSnapAlign: "start" }}>
-      {isYouTube ? (
+      {!video || mediaFailed ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black px-6 text-center text-white">
+          <Play className="h-12 w-12 text-white/80" />
+          <p className="text-sm font-semibold">Media could not load</p>
+          <p className="text-xs text-white/70">This reel may be private, moved, or blocked by the video source.</p>
+        </div>
+      ) : isYouTube ? (
         <div className="absolute inset-0 bg-black">
           {isVisible ? (
             <iframe
@@ -185,13 +196,24 @@ export function ReelItem({
               allowFullScreen
             />
           ) : (
-            <img src={youtubeThumbnail(video) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" />
+            <img src={youtubeThumbnail(video) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" onError={() => setMediaFailed(true)} />
           )}
         </div>
       ) : isImage ? (
-        <img src={video} alt="" className="h-full w-full object-cover" />
+        <img src={video} alt="" className="h-full w-full object-cover" onError={() => setMediaFailed(true)} />
       ) : (
-        <video ref={videoRef} src={video} className="h-full w-full object-cover" loop playsInline onClick={() => setPaused((p) => !p)} />
+        <video
+          ref={videoRef}
+          src={video}
+          className="h-full w-full object-cover"
+          loop
+          playsInline
+          controls
+          preload="metadata"
+          muted={globalMuted || !!musicUrl}
+          onClick={() => setPaused((p) => !p)}
+          onError={() => setMediaFailed(true)}
+        />
       )}
 
       {paused && !isImage && !isYouTube && (

@@ -79,6 +79,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
   const [showHeart, setShowHeart] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showShare, setShowShare] = useState(false);
+  const [mediaFailed, setMediaFailed] = useState(false);
 
   const toggleLike = async (forceLike = false) => {
     if (!user || !id || !isUuid(user.id) || !isSupabasePost) {
@@ -147,6 +148,14 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
 
         <div className="relative bg-black" onDoubleClick={handleDoubleTap}>
           {(() => {
+            if (!image || mediaFailed) {
+              return (
+                <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 bg-black px-6 text-center text-white">
+                  <p className="text-sm font-semibold">Media could not load</p>
+                  <p className="text-xs text-white/70">This upload may be private, moved, or blocked by the video source.</p>
+                </div>
+              );
+            }
             const ytId = getYouTubeId(image);
             if (ytId) {
               return (
@@ -162,9 +171,9 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
               );
             }
             return isVideo ? (
-              <video src={image} className="w-full max-h-[600px] object-contain" controls playsInline />
+              <video src={image} className="w-full max-h-[600px] object-contain" controls playsInline preload="metadata" onError={() => setMediaFailed(true)} />
             ) : (
-              <img src={image} alt="Post" className="w-full aspect-square object-cover" />
+              <img src={image} alt="Post" className="w-full aspect-square object-cover" onError={() => setMediaFailed(true)} />
             );
           })()}
           {showHeart && (
