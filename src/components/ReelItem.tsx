@@ -56,11 +56,12 @@ export function ReelItem({
   const youTubeId = getYouTubeId(video);
   const isYouTube = !!youTubeId;
   const isMock = id.startsWith("mock-");
+  const isSupabaseReel = isUuid(id);
 
   // Likes (real-time-ish via fast invalidation)
   const { data: likeInfo } = useQuery({
     queryKey: ["reel-likes", id, user?.id],
-    enabled: !isMock,
+    enabled: !isMock && isSupabaseReel,
     staleTime: 10_000,
     queryFn: async () => {
       const [{ count }, mine] = await Promise.all([
@@ -75,7 +76,7 @@ export function ReelItem({
 
   const { data: commentCount = 0 } = useQuery({
     queryKey: ["reel-comments-count", id],
-    enabled: !isMock,
+    enabled: !isMock && isSupabaseReel,
     staleTime: 10_000,
     queryFn: async () => {
       const { count } = await supabase.from("reel_comments").select("*", { count: "exact", head: true }).eq("reel_id", id);
@@ -84,7 +85,7 @@ export function ReelItem({
   });
 
   const toggleLike = async () => {
-    if (!user || isMock) {
+    if (!user || isMock || !isSupabaseReel) {
       const next = !localLiked;
       setLocalLiked(next);
       if (localLikeKey) localStorage.setItem(localLikeKey, String(next));
@@ -264,7 +265,7 @@ export function ReelItem({
       {showMore && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60" onClick={() => setShowMore(false)}>
           <div className="w-full max-w-lg rounded-t-2xl bg-background py-2" onClick={(e) => e.stopPropagation()}>
-            {user && userId === user.id && !isMock && (
+            {user && userId === user.id && !isMock && isSupabaseReel && (
               <>
                 <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
                   <Pencil className="h-5 w-5" /> Edit reel
@@ -285,7 +286,7 @@ export function ReelItem({
         </div>
       )}
 
-      {showEdit && !isMock && (
+      {showEdit && !isMock && isSupabaseReel && (
         <EditPostModal
           table="reels"
           id={id}

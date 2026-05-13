@@ -44,6 +44,13 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
   const [sending, setSending] = useState(false);
 
   const load = async () => {
+    if (!isUuid(reelId)) {
+      const firebaseRemote = await readFirebaseComments("reel", reelId).catch(() => []);
+      setComments([...firebaseRemote, ...readLocalComments(reelId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+      setLoading(false);
+      return;
+    }
+
     const { data } = await supabase
       .from("reel_comments")
       .select("*")
@@ -63,6 +70,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
 
   // Realtime new comments
   useEffect(() => {
+    if (!isUuid(reelId)) return;
     const channel = supabase
       .channel(`reel-comments-${reelId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "reel_comments", filter: `reel_id=eq.${reelId}` }, () => load())
@@ -84,7 +92,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCommentAdded }: Props) {
         avatar_url: user.photoURL || null,
       },
     };
-    if (!isUuid(user.id)) {
+    if (!isUuid(user.id) || !isUuid(reelId)) {
       await saveFirebaseComment("reel", reelId, localComment).catch(() => {});
       saveLocalComment(reelId, localComment);
       setComments((prev) => [...prev, localComment]);

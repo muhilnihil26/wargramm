@@ -50,10 +50,11 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
   const [showMore, setShowMore] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const isOwner = !!user && !!userId && user.id === userId && !!id;
+  const isSupabasePost = !!id && isUuid(id);
 
   const toggleSave = async () => {
     if (!user || !id) return;
-    if (!isUuid(user.id)) {
+    if (!isUuid(user.id) || !isSupabasePost) {
       const next = !saved;
       setSaved(next);
       if (localSaveKey) localStorage.setItem(localSaveKey, String(next));
@@ -80,7 +81,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
   const [showShare, setShowShare] = useState(false);
 
   const toggleLike = async (forceLike = false) => {
-    if (!user || !id || !isUuid(user.id)) {
+    if (!user || !id || !isUuid(user.id) || !isSupabasePost) {
       const next = forceLike || !liked;
       if (next === liked) return;
       setLiked(next);
@@ -235,7 +236,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
       {showMore && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60" onClick={() => setShowMore(false)}>
           <div className="w-full max-w-lg rounded-t-2xl bg-background py-2" onClick={(e) => e.stopPropagation()}>
-            {isOwner && (
+            {isOwner && isSupabasePost && (
               <>
                 <button onClick={() => { setShowMore(false); setShowEdit(true); }} className="flex items-center gap-3 w-full px-5 py-3 text-left text-foreground">
                   <Pencil className="h-5 w-5" /> Edit post
@@ -265,7 +266,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
         </div>
       )}
 
-      {showEdit && id && (
+      {showEdit && id && isSupabasePost && (
         <EditPostModal
           table="posts"
           id={id}

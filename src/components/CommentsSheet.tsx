@@ -50,6 +50,13 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
   }, [postId]);
 
   const loadComments = async () => {
+    if (!isUuid(postId)) {
+      const firebaseRemote = await readFirebaseComments("post", postId).catch(() => []);
+      setComments([...firebaseRemote, ...readLocalComments(postId)].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+      setLoading(false);
+      return;
+    }
+
     const { data } = await supabase
       .from("comments")
       .select("*")
@@ -86,7 +93,7 @@ export function CommentsSheet({ postId, postUserId, onClose, onCommentAdded }: C
         avatar_url: user.photoURL || null,
       },
     };
-    if (!isUuid(user.id)) {
+    if (!isUuid(user.id) || !isUuid(postId)) {
       await saveFirebaseComment("post", postId, localComment).catch(() => {});
       saveLocalComment(postId, localComment);
       setComments((prev) => [...prev, localComment]);

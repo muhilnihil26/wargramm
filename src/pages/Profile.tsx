@@ -80,7 +80,7 @@ const Profile = () => {
     queryFn: async () => {
       if (!user || !isUuid(user.id)) return [];
       const { data: rows } = await supabase.from("saved_posts").select("post_id").eq("user_id", user.id);
-      const ids = (rows || []).map((r: any) => r.post_id);
+      const ids = (rows || []).map((r: any) => r.post_id).filter((id: any) => isUuid(id));
       if (ids.length === 0) return [];
       const { data: posts } = await supabase.from("posts").select("*").in("id", ids);
       return posts || [];
@@ -97,7 +97,7 @@ const Profile = () => {
         .map((key) => key.split(":").pop())
         .filter(Boolean) as string[];
       const firebaseIds = await readFirebasePostBookmarks(user.id).catch(() => []);
-      const ids = [...new Set([...firebaseIds, ...localIds])];
+      const ids = [...new Set([...firebaseIds, ...localIds])].filter((id) => isUuid(id));
       if (ids.length === 0) return [];
       const { data: posts } = await supabase.from("posts").select("*").in("id", ids);
       return posts || [];

@@ -102,10 +102,11 @@ const Index = () => {
       if (visiblePosts.length === 0) return [];
 
       const postIds = visiblePosts.map((p: any) => p.id);
+      const supabasePostIds = postIds.filter((id: any) => isUuid(id));
       const [{ data: likeCounts }, { data: commentCounts }, { data: userLikes }] = await Promise.all([
-        supabase.from("likes").select("post_id").in("post_id", postIds),
-        supabase.from("comments").select("post_id").in("post_id", postIds),
-        user && isUuid(user.id) ? supabase.from("likes").select("post_id").eq("user_id", user.id).in("post_id", postIds) : Promise.resolve({ data: [] }),
+        supabasePostIds.length ? supabase.from("likes").select("post_id").in("post_id", supabasePostIds) : Promise.resolve({ data: [] }),
+        supabasePostIds.length ? supabase.from("comments").select("post_id").in("post_id", supabasePostIds) : Promise.resolve({ data: [] }),
+        user && isUuid(user.id) && supabasePostIds.length ? supabase.from("likes").select("post_id").eq("user_id", user.id).in("post_id", supabasePostIds) : Promise.resolve({ data: [] }),
       ]);
 
       return visiblePosts.map((p: any) => ({
