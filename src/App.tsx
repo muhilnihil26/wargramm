@@ -41,6 +41,7 @@ import { NoticeBanner } from "@/components/NoticeBanner";
 import { WelcomeTour } from "@/components/WelcomeTour";
 import { BlockedGate } from "@/components/BlockedGate";
 import { AppLoading } from "@/components/AppLoading";
+import { FreshStartCleaner } from "@/components/FreshStartCleaner";
 import { claimDailyLoginBonus, applySignupBonuses } from "@/lib/coins";
 import { maybeRequestNotificationPermission } from "@/lib/webPush";
 import { useEffect } from "react";
@@ -125,6 +126,7 @@ function AppRoutes() {
       </Routes>
       {user && !hideBottomNav && <BottomNav />}
       {user && <NotificationListener />}
+      {user && <FreshStartCleaner />}
       {user && <WelcomeTour />}
     </BlockedGate>
   );
