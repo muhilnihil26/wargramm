@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp, BadgeDollarSign, ExternalLink } from "lucide-react";
+import { Sparkles, Users, Music, Film, Image, ArrowLeft, Trash2, Shield, Send, Loader2, BadgeCheck, Check, X as XIcon, Settings as SettingsIcon, Ticket, Plus, Coins, Gift, Megaphone, Ban, Crown, TrendingUp, BadgeDollarSign, ExternalLink, Cloud } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { database } from "@/integrations/firebase/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -10,8 +11,9 @@ import { isConfiguredAdmin } from "@/lib/admin";
 import { isUuid } from "@/lib/ids";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName } from "@/lib/firebaseMedia";
 import { logCloudAction } from "@/lib/cloudActions";
+import { get, ref, remove } from "firebase/database";
 
-type Tab = "ai" | "settings" | "users" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
+type Tab = "ai" | "settings" | "users" | "cloud" | "celebrity" | "music" | "posts" | "reels" | "ads" | "verify" | "coupons" | "coins" | "notices" | "blocks";
 
 const QUICK_PROMPTS = [
   "Change primary color to electric purple",
@@ -163,6 +165,7 @@ const Admin = () => {
     { id: "coins" as Tab, icon: Coins, label: "Coins" },
     { id: "notices" as Tab, icon: Megaphone, label: "Notices" },
     { id: "blocks" as Tab, icon: Ban, label: "Blocks" },
+    { id: "cloud" as Tab, icon: Cloud, label: "Cloud" },
     { id: "users" as Tab, icon: Users, label: "Users" },
     { id: "celebrity" as Tab, icon: Crown, label: "Stars" },
     { id: "music" as Tab, icon: Music, label: "Music" },
@@ -216,6 +219,10 @@ const Admin = () => {
               </div>
             ))}
           </div>
+        )}
+
+        {activeTab === "cloud" && (
+          <FirebaseCloudMigration adminId={user!.id} />
         )}
 
         {activeTab === "celebrity" && (
@@ -882,6 +889,75 @@ function SettingsPanel({ getSetting, updateSetting }: { getSetting: (k: string) 
 }
 
 export default Admin;
+
+function FirebaseCloudMigration({ adminId }: { adminId: string }) {
+  const [running, setRunning] = useState(false);
+  const isHardcodedAdmin = adminId === "nxANfkUL63MSTv300eH6rSICw9w1";
+
+  const runCleanup = async () => {
+    if (!isHardcodedAdmin) {
+      toast.error("Only the configured Firebase admin can run this migration.");
+      return;
+    }
+    if (!confirm("This deletes Firebase cloud posts/reels, likes/comments for those media, and removes app profile mirrors except admin. Continue?")) return;
+    setRunning(true);
+    try {
+      await Promise.all([
+        remove(ref(database, "firebasePosts")),
+        remove(ref(database, "firebaseReels")),
+        remove(ref(database, "postLikes")),
+        remove(ref(database, "reelLikes")),
+        remove(ref(database, "postComments")),
+        remove(ref(database, "reelComments")),
+      ]);
+
+      const profilesSnap = await get(ref(database, "profiles"));
+      const profiles = profilesSnap.val() || {};
+      const removals = Object.entries(profiles)
+        .filter(([uid, profile]: [string, any]) => uid !== "nxANfkUL63MSTv300eH6rSICw9w1" && profile?.email !== "muhilsiddhesh.in@gmail.com")
+        .map(([uid]) => remove(ref(database, `profiles/${uid}`)));
+      await Promise.all(removals);
+      await logCloudAction({ id: adminId, uid: adminId } as any, "admin_firebase_cloud_cleanup", { removed_profiles: removals.length }).catch(() => {});
+      toast.success(`Firebase cloud cleaned. Removed ${removals.length} profile mirrors.`);
+    } catch (error: any) {
+      toast.error(error?.message || "Firebase cleanup failed. Deploy database rules first.");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-border bg-secondary/40 p-4">
+        <div className="flex items-start gap-3">
+          <Cloud className="mt-0.5 h-5 w-5 text-primary" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-bold text-foreground">Firebase cloud migration</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use this when Supabase media sync is blocked. It keeps Firebase as backup cloud storage for posts, reels, stories, and YouTube library.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 rounded-xl bg-background p-3 text-xs text-muted-foreground">
+          <p className="font-semibold text-foreground">Cleanup action:</p>
+          <p>Deletes Firebase posts, reels, post/reel likes, post/reel comments, and app profile mirrors except the admin account.</p>
+          <p className="mt-2">Admin kept: muhilsiddhesh.in@gmail.com / nxANfkUL63MSTv300eH6rSICw9w1</p>
+        </div>
+        <button
+          onClick={runCleanup}
+          disabled={running || !isHardcodedAdmin}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2.5 text-sm font-bold text-destructive-foreground disabled:opacity-50"
+        >
+          {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          {running ? "Cleaning Firebase..." : "Clean Firebase Cloud"}
+        </button>
+        {!isHardcodedAdmin && (
+          <p className="mt-2 text-[11px] text-muted-foreground">Sign in as the configured Firebase admin to enable this.</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function ReelAdsAdmin({ ads, adminId, onChanged }: { ads: any[]; adminId: string; onChanged: () => void }) {
   const [title, setTitle] = useState("");

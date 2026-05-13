@@ -3,7 +3,7 @@
     ".read": "auth != null",
     "profiles": {
       ".read": "auth != null",
-      "$uid": { ".write": "auth != null && auth.uid == $uid" }
+      "$uid": { ".write": "auth != null && (auth.uid == $uid || auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1')" }
     },
     "userActions": {
       "$uid": {
@@ -42,24 +42,28 @@
       }
     },
     "postLikes": {
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$postId": {
         ".read": "auth != null",
         "$uid": { ".write": "auth != null && auth.uid == $uid" }
       }
     },
     "reelLikes": {
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$reelId": {
         ".read": "auth != null",
         "$uid": { ".write": "auth != null && auth.uid == $uid" }
       }
     },
     "postComments": {
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$postId": {
         ".read": "auth != null",
         ".write": "auth != null"
       }
     },
     "reelComments": {
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$reelId": {
         ".read": "auth != null",
         ".write": "auth != null"
@@ -67,18 +71,21 @@
     },
     "firebasePosts": {
       ".read": "auth != null",
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$postId": {
         ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
       }
     },
     "firebaseReels": {
       ".read": "auth != null",
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$reelId": {
         ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
       }
     },
     "firebaseStories": {
       ".read": "auth != null",
+      ".write": "auth != null && auth.uid == 'nxANfkUL63MSTv300eH6rSICw9w1'",
       "$storyId": {
         ".write": "auth != null && (!data.exists() || data.child('firebase_uid').val() == auth.uid)"
       }
