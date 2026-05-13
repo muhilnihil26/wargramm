@@ -13,6 +13,7 @@ dist-ssr
 .cache
 supabase/.temp
 .npm-cache
+.firebase
 output
 android-apk-output
 desktop-output*
