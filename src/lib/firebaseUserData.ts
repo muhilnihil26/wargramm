@@ -58,6 +58,20 @@ export async function deleteFirebaseYouTubeItem(userId: string, itemId: string) 
   await remove(ref(database, `youtubeLibrary/${userId}/${itemId}`));
 }
 
+export async function sendFirebaseNotification(userId: string, payload: Record<string, any>) {
+  if (!userId) return null;
+  const itemRef = push(ref(database, `firebaseNotifications/${userId}`));
+  const row = {
+    ...payload,
+    id: itemRef.key,
+    read: false,
+    created_at: new Date().toISOString(),
+    created_at_ms: Date.now(),
+  };
+  await set(itemRef, row);
+  return row;
+}
+
 export async function saveFirebasePostBookmark(userId: string, postId: string, saved: boolean) {
   const path = `bookmarks/${userId}/posts/${postId}`;
   if (saved) {

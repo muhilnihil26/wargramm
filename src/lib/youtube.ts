@@ -1,5 +1,5 @@
 export function getYouTubeId(input: string | null | undefined): string | null {
-  const value = (input || "").trim();
+  const value = decodeURIComponent((input || "").trim());
   if (!value) return null;
 
   try {
@@ -24,7 +24,10 @@ export function getYouTubeId(input: string | null | undefined): string | null {
   }
 
   const match = value.match(/(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/|v\/))([\w-]{11})/i);
-  return match?.[1] || null;
+  if (match?.[1]) return match[1];
+
+  const loose = value.match(/(?:^|[?&#/\s=])([\w-]{11})(?:[?&#/\s]|$)/);
+  return isYouTubeId(loose?.[1]) ? loose![1] : null;
 }
 
 export function getPlaylistId(input: string | null | undefined): string | null {

@@ -126,6 +126,12 @@
         }
       }
     },
+    "firebaseNotifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null"
+      }
+    },
     "pushTokens": {
       "$uid": {
         ".read": "auth != null && auth.uid == $uid",

@@ -36,13 +36,13 @@ export class NotificationService {
 
   private async initializeWeb() {
     try {
+      const registration = 'serviceWorker' in navigator
+        ? await navigator.serviceWorker.register('/firebase-messaging-sw.js').catch(() => undefined)
+        : undefined;
       const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
       if (!vapidKey) {
         console.warn('VITE_FIREBASE_VAPID_KEY not set; skipping web push registration');
       } else if ('Notification' in window && Notification.permission === 'granted') {
-        const registration = 'serviceWorker' in navigator
-          ? await navigator.serviceWorker.ready.catch(() => undefined)
-          : undefined;
         const token = await getToken(this.messaging, {
           vapidKey,
           serviceWorkerRegistration: registration,

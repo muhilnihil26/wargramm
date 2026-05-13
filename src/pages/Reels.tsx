@@ -12,7 +12,7 @@ import { rewardForReel } from "@/lib/coins";
 import { profileAvatar } from "@/lib/avatar";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { mediaOwnerAvatar, mediaOwnerId, mediaOwnerName, mediaOwnerPayload } from "@/lib/firebaseMedia";
-import { getYouTubeId } from "@/lib/youtube";
+import { getYouTubeId, normalizeYouTubeUrl } from "@/lib/youtube";
 import { isUuid } from "@/lib/ids";
 import { readLocalProfile } from "@/lib/localProfile";
 import { filterVisibleMediaRows } from "@/lib/visibility";
@@ -176,9 +176,10 @@ const Reels = () => {
       if (!getYouTubeId(ytUrl.trim())) { toast.error("Paste a valid YouTube video or Shorts URL"); return; }
       setUploading(true);
       try {
+        const normalizedVideoUrl = normalizeYouTubeUrl(ytUrl.trim());
         const { error } = await supabase.from("reels").insert({
           ...mediaOwnerPayload(user),
-          video_url: ytUrl.trim(),
+          video_url: normalizedVideoUrl,
           caption,
           visibility,
           music_url: null,
@@ -188,7 +189,7 @@ const Reels = () => {
         } as any);
         if (error) {
           await saveFirebaseMedia("reel", user, {
-            video_url: ytUrl.trim(),
+            video_url: normalizedVideoUrl,
             caption,
             visibility,
             music_url: null,

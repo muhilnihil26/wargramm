@@ -14,7 +14,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { chatService } from "@/services/chatService";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
-import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
+import { readFirebasePublicProfile, sendFirebaseNotification } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
 import { onValue, ref, remove, set } from "firebase/database";
 
@@ -331,6 +331,13 @@ const Messages = () => {
       status: "ringing",
       createdAt: Date.now(),
     }).catch(() => {});
+    await sendFirebaseNotification(peerId, {
+      type: "call",
+      title: `Incoming ${mode} call`,
+      body: `${user.displayName || user.email?.split("@")[0] || "Someone"} is calling`,
+      actor_id: user.id,
+      conversation_id: activeConvo.id,
+    }).catch(() => {});
     // Send invite broadcast so the other side can show the incoming-call UI.
     try {
       const ch = supabase.channel(`call-invite:${activeConvo.id}`);
@@ -514,6 +521,13 @@ const Messages = () => {
           text: draft,
           type: "text",
         });
+        await sendFirebaseNotification(activeConvo.other_user.user_id, {
+          type: "message",
+          title: `New message from ${user.displayName || user.email?.split("@")[0] || "someone"}`,
+          body: draft.slice(0, 120),
+          actor_id: user.id,
+          conversation_id: activeConvo.id,
+        }).catch(() => {});
         await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text", firebase_room: true }).catch(() => {});
       } catch {
         persistLocalMessage(activeConvo.id, localMessage);
@@ -552,6 +566,13 @@ const Messages = () => {
         return;
       }
       setMessages((prev) => prev.map((m) => m.id === tempId ? (data as Message) : m));
+      await sendFirebaseNotification(activeConvo.other_user.user_id, {
+        type: "message",
+        title: `New message from ${user.displayName || user.email?.split("@")[0] || "someone"}`,
+        body: draft.slice(0, 120),
+        actor_id: user.id,
+        conversation_id: activeConvo.id,
+      }).catch(() => {});
       await logCloudAction(user, "message_send", { conversation_id: activeConvo.id, type: "text" }).catch(() => {});
       // Clear typing
       const isUser1 = activeConvo.user1_id === user.id;

@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { notifyWeb } from "@/lib/webPush";
 import { isUuid } from "@/lib/ids";
+import { database } from "@/integrations/firebase/config";
+import { onValue, ref, update } from "firebase/database";
 
 const TYPE_TEXT: Record<string, string> = {
   like: "liked your post",
@@ -24,7 +26,39 @@ export function NotificationListener() {
   const qc = useQueryClient();
 
   useEffect(() => {
-    if (!user || !isUuid(user.id)) return;
+    if (!user) return;
+
+    const firebaseNotifRef = ref(database, `firebaseNotifications/${user.id}`);
+    const unsubscribeFirebase = onValue(firebaseNotifRef, (snapshot) => {
+      const rows = snapshot.val() || {};
+      Object.values(rows).forEach((n: any) => {
+        if (!n || n.read) return;
+        const title = n.title || "WarGram";
+        const body = n.body || n.message || "";
+        toast(title, body ? { description: body } : undefined);
+        notifyWeb(title, body);
+        if (n.id) update(ref(database, `firebaseNotifications/${user.id}/${n.id}`), { read: true }).catch(() => {});
+      });
+    });
+
+    const callInviteRef = ref(database, `callInvites/${user.id}`);
+    const unsubscribeCalls = onValue(callInviteRef, (snapshot) => {
+      const invites = snapshot.val() || {};
+      const latest = Object.values(invites)
+        .filter((invite: any) => invite?.status === "ringing" && invite.from !== user.id)
+        .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))[0] as any;
+      if (!latest) return;
+      const title = `Incoming ${latest.mode || "audio"} call`;
+      toast(title);
+      notifyWeb("WarGram", title);
+    });
+
+    if (!isUuid(user.id)) {
+      return () => {
+        unsubscribeFirebase();
+        unsubscribeCalls();
+      };
+    }
 
     const notifChannel = supabase
       .channel(`notif-global:${user.id}`)
@@ -82,6 +116,8 @@ export function NotificationListener() {
       .subscribe();
 
     return () => {
+      unsubscribeFirebase();
+      unsubscribeCalls();
       supabase.removeChannel(notifChannel);
       supabase.removeChannel(msgChannel);
     };
