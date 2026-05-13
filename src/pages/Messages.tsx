@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Send, Image, X, Check, CheckCheck, SmilePlus, Phone, Video as VideoIcon, Paperclip, FileText, Trash2, Palette } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { database } from "@/integrations/firebase/config";
 import { useAuth } from "@/contexts/AuthContext";
 import { isOnline } from "@/hooks/usePresence";
 import { toast } from "sonner";
@@ -15,6 +16,7 @@ import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
+import { onValue, ref, remove, set } from "firebase/database";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -127,7 +129,7 @@ const Messages = () => {
   const [otherProfile, setOtherProfile] = useState<{ last_seen?: string | null; is_verified?: boolean | null } | null>(null);
   const [callMode, setCallMode] = useState<"audio" | "video" | null>(null);
   const [callInitiator, setCallInitiator] = useState(true);
-  const [incomingCall, setIncomingCall] = useState<{ mode: "audio" | "video"; from: string } | null>(null);
+  const [incomingCall, setIncomingCall] = useState<{ mode: "audio" | "video"; from: string; conversationId: string; peer?: Conversation["other_user"] } | null>(null);
   const [attachFile, setAttachFile] = useState<File | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [chatBg, setChatBg] = useState(() => localStorage.getItem("wargram-chat-bg") || "default");
@@ -137,6 +139,27 @@ const Messages = () => {
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { if (user) loadConversations(); }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const invitesRef = ref(database, `callInvites/${user.id}`);
+    const unsubscribe = onValue(invitesRef, async (snapshot) => {
+      const invites = snapshot.val();
+      if (!invites) return;
+      const latest = Object.values(invites)
+        .filter((invite: any) => invite?.status === "ringing" && invite.from !== user.id)
+        .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))[0] as any;
+      if (!latest) return;
+      const peer = await resolvePeerProfile(latest.from);
+      setIncomingCall({
+        mode: latest.mode || "audio",
+        from: latest.from,
+        conversationId: latest.conversationId,
+        peer,
+      });
+    });
+    return unsubscribe;
+  }, [user]);
 
   // Live-sync inbox badges: refresh conversations on any message insert/update
   // for any conversation the user belongs to. Only runs when no chat is open.
@@ -284,7 +307,7 @@ const Messages = () => {
       .channel(`call-invite:${activeConvo.id}`, { config: { broadcast: { self: false } } })
       .on("broadcast", { event: "invite" }, ({ payload }) => {
         if (payload.from === user.id) return;
-        setIncomingCall({ mode: payload.mode, from: payload.from });
+        setIncomingCall({ mode: payload.mode, from: payload.from, conversationId: activeConvo.id, peer: activeConvo.other_user });
       })
       .subscribe();
 
@@ -299,6 +322,15 @@ const Messages = () => {
 
   const startCall = async (mode: "audio" | "video") => {
     if (!activeConvo || !user) return;
+    const peerId = activeConvo.other_user.user_id;
+    await set(ref(database, `callInvites/${peerId}/${activeConvo.id}`), {
+      from: user.id,
+      to: peerId,
+      conversationId: activeConvo.id,
+      mode,
+      status: "ringing",
+      createdAt: Date.now(),
+    }).catch(() => {});
     // Send invite broadcast so the other side can show the incoming-call UI.
     try {
       const ch = supabase.channel(`call-invite:${activeConvo.id}`);
@@ -312,6 +344,42 @@ const Messages = () => {
     }
     setCallInitiator(true);
     setCallMode(mode);
+  };
+
+  const resolvePeerProfile = async (userId: string): Promise<Conversation["other_user"]> => {
+    if (isUuid(userId)) {
+      const { data } = await supabase.from("profiles").select("user_id, username, avatar_url, last_seen, is_verified").eq("user_id", userId).maybeSingle();
+      if (data) return data as any;
+    }
+    const profile = await readFirebasePublicProfile(userId).catch(() => null);
+    const known = listVisibleKnownProfiles().find((p) => p.user_id === userId);
+    return profile
+      ? { user_id: userId, username: profile.username || profile.email?.split("@")[0] || "User", avatar_url: profile.avatar_url || "", last_seen: null, is_verified: profile.is_verified }
+      : known || { user_id: userId, username: "User", avatar_url: "", last_seen: null, is_verified: false };
+  };
+
+  const acceptIncomingCall = async () => {
+    if (!user || !incomingCall) return;
+    const peer = incomingCall.peer || await resolvePeerProfile(incomingCall.from);
+    await remove(ref(database, `callInvites/${user.id}/${incomingCall.conversationId}`)).catch(() => {});
+    setActiveConvo({
+      id: incomingCall.conversationId,
+      user1_id: user.id,
+      user2_id: incomingCall.from,
+      other_user: peer,
+      updated_at: new Date().toISOString(),
+      unread_count: 0,
+    });
+    const mode = incomingCall.mode;
+    setIncomingCall(null);
+    setCallInitiator(false);
+    setCallMode(mode);
+  };
+
+  const rejectIncomingCall = async () => {
+    if (!user || !incomingCall) return;
+    await remove(ref(database, `callInvites/${user.id}/${incomingCall.conversationId}`)).catch(() => {});
+    setIncomingCall(null);
   };
 
   const loadReactions = async (convoId: string) => {
@@ -832,22 +900,17 @@ const Messages = () => {
         {incomingCall && !callMode && (
           <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80">
             <div className="rounded-2xl bg-background p-6 max-w-sm w-[90%] text-center space-y-4">
-              <img src={profileAvatar(activeConvo.other_user.avatar_url, activeConvo.other_user.user_id, activeConvo.other_user.username)} alt="" className="mx-auto h-20 w-20 rounded-full object-cover" />
+              <img src={profileAvatar((incomingCall.peer || activeConvo.other_user).avatar_url, incomingCall.from, (incomingCall.peer || activeConvo.other_user).username)} alt="" className="mx-auto h-20 w-20 rounded-full object-cover" />
               <div>
-                <p className="font-semibold text-foreground">{activeConvo.other_user.username}</p>
+                <p className="font-semibold text-foreground">{(incomingCall.peer || activeConvo.other_user).username}</p>
                 <p className="text-sm text-muted-foreground">Incoming {incomingCall.mode} call…</p>
               </div>
               <div className="flex justify-center gap-4">
-                <button onClick={() => setIncomingCall(null)} className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white">
+                <button onClick={rejectIncomingCall} className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white">
                   <X className="h-6 w-6" />
                 </button>
                 <button
-                  onClick={() => {
-                    const m = incomingCall.mode;
-                    setIncomingCall(null);
-                    setCallInitiator(false);
-                    setCallMode(m);
-                  }}
+                  onClick={acceptIncomingCall}
                   className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white"
                 >
                   <Phone className="h-6 w-6" />
@@ -940,6 +1003,25 @@ const Messages = () => {
           ))
         )}
       </div>
+      {incomingCall && !callMode && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/80">
+          <div className="rounded-2xl bg-background p-6 max-w-sm w-[90%] text-center space-y-4">
+            <img src={profileAvatar(incomingCall.peer?.avatar_url, incomingCall.from, incomingCall.peer?.username)} alt="" className="mx-auto h-20 w-20 rounded-full object-cover" />
+            <div>
+              <p className="font-semibold text-foreground">{incomingCall.peer?.username || "Incoming call"}</p>
+              <p className="text-sm text-muted-foreground">Incoming {incomingCall.mode} call...</p>
+            </div>
+            <div className="flex justify-center gap-4">
+              <button onClick={rejectIncomingCall} className="flex h-14 w-14 items-center justify-center rounded-full bg-red-500 text-white">
+                <X className="h-6 w-6" />
+              </button>
+              <button onClick={acceptIncomingCall} className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white">
+                <Phone className="h-6 w-6" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
