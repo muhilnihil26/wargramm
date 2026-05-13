@@ -10,6 +10,8 @@ import { VerifiedBadge } from "@/components/VerifiedBadge";
 import { PostViewerModal } from "@/components/PostViewerModal";
 import { ImageViewer } from "@/components/ImageViewer";
 import { profileAvatar } from "@/lib/avatar";
+import { listVisibleKnownProfiles } from "@/lib/knownUsers";
+import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -25,15 +27,52 @@ const UserProfile = () => {
   const { data: profile } = useQuery({
     queryKey: ["user-profile", userId],
     queryFn: async () => {
+      if (!isUuid(userId)) {
+        const { data } = await supabase
+          .from("firebase_profiles" as any)
+          .select("*")
+          .eq("firebase_uid", userId!)
+          .maybeSingle();
+        const adminFallback = listVisibleKnownProfiles().find((p) => p.user_id === userId);
+        if (data) {
+          return {
+            user_id: data.firebase_uid,
+            username: data.username || data.email?.split("@")[0] || "user",
+            full_name: data.full_name || "",
+            avatar_url: data.avatar_url || "",
+            bio: data.bio || "",
+            is_private: !!data.is_private,
+            show_activity: data.show_activity !== false,
+            is_verified: !!data.is_verified,
+          };
+        }
+        return adminFallback ? {
+          user_id: adminFallback.user_id,
+          username: adminFallback.username,
+          full_name: adminFallback.full_name,
+          avatar_url: adminFallback.avatar_url,
+          bio: "",
+          is_private: false,
+          show_activity: true,
+          is_verified: adminFallback.is_verified,
+        } : null;
+      }
       const { data } = await supabase.from("profiles").select("*").eq("user_id", userId!).single();
       return data;
     },
-    enabled: isUuid(userId),
+    enabled: !!userId,
   });
 
   const { data: stats } = useQuery({
     queryKey: ["user-profile-stats", userId],
     queryFn: async () => {
+      if (!isUuid(userId)) {
+        const [{ count: postCount }, { count: reelCount }] = await Promise.all([
+          supabase.from("posts").select("*", { count: "exact", head: true }).eq("firebase_uid", userId!),
+          supabase.from("reels").select("*", { count: "exact", head: true }).eq("firebase_uid", userId!),
+        ]);
+        return { posts: (postCount || 0) + (reelCount || 0), followers: 0, following: 0 };
+      }
       const [{ count: postCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", userId!),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", userId!),
@@ -41,7 +80,7 @@ const UserProfile = () => {
       ]);
       return { posts: postCount || 0, followers: followerCount || 0, following: followingCount || 0 };
     },
-    enabled: isUuid(userId),
+    enabled: !!userId,
   });
 
   const { data: relation } = useQuery({
@@ -62,9 +101,9 @@ const UserProfile = () => {
 
   const { data: posts } = useQuery({
     queryKey: ["user-profile-posts", userId, canSeePosts],
-    enabled: isUuid(userId) && canSeePosts,
+    enabled: !!userId && canSeePosts,
     queryFn: async () => {
-      const { data } = await supabase.from("posts").select("*").eq("user_id", userId!).order("created_at", { ascending: false });
+      const { data } = await supabase.from("posts").select("*").eq(isUuid(userId) ? "user_id" : "firebase_uid", userId!).order("created_at", { ascending: false });
       return data || [];
     },
   });
@@ -93,7 +132,6 @@ const UserProfile = () => {
     onError: (e: any) => toast.error(e.message),
   });
 
-  if (!isUuid(userId)) return <div className="flex min-h-screen items-center justify-center bg-background"><p className="text-muted-foreground">Profile not found</p></div>;
   if (!profile) return <div className="flex min-h-screen items-center justify-center bg-background"><p className="text-muted-foreground">Loading...</p></div>;
 
   const followLabel = relation?.following ? "Following" : relation?.requested ? "Requested" : "Follow";
@@ -160,7 +198,9 @@ const UserProfile = () => {
           <div className="grid grid-cols-3 gap-0.5">
             {posts?.map((post: any) => (
               <button key={post.id} onClick={() => setViewingPost(post)} className="aspect-square overflow-hidden bg-black">
-                {post.is_video ? (
+                {getYouTubeId(post.image_url) ? (
+                  <img src={youtubeThumbnail(post.image_url) || post.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                ) : post.is_video ? (
                   <video src={post.image_url} className="h-full w-full object-cover" muted preload="metadata" />
                 ) : (
                   <img src={post.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />

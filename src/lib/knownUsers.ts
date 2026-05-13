@@ -3,6 +3,9 @@ type KnownProfile = {
   fullName: string;
 };
 
+const ADMIN_EMAIL = "muhilsiddhesh.in@gmail.com";
+const ADMIN_FIREBASE_UID = "nxANfkUL63MSTv300eH6rSICw9w1";
+
 const KNOWN_PROFILES: Record<string, KnownProfile> = {
   "infantjeril442@gmail.com": { username: "infantjeril442", fullName: "Infant Jeril" },
   "nihilyadesh2015@gmail.com": { username: "nihilyadesh2015", fullName: "Nihil Yadesh" },
@@ -33,4 +36,18 @@ export function listKnownProfiles() {
     is_verified: false,
     is_known_only: true,
   }));
+}
+
+export function listVisibleKnownProfiles() {
+  const profile = KNOWN_PROFILES[ADMIN_EMAIL];
+  return [{
+    id: ADMIN_FIREBASE_UID,
+    user_id: ADMIN_FIREBASE_UID,
+    email: ADMIN_EMAIL,
+    username: profile.username,
+    full_name: profile.fullName,
+    avatar_url: "",
+    is_verified: true,
+    is_known_only: false,
+  }];
 }

@@ -12,6 +12,7 @@ import { linkify } from "@/lib/linkify";
 import { profileAvatar } from "@/lib/avatar";
 import { chatService } from "@/services/chatService";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
+import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (value?: string | null) => !!value && value !== "undefined" && UUID_RE.test(value);
@@ -187,15 +188,25 @@ const Messages = () => {
   useEffect(() => {
     if (!user) return;
     const to = new URLSearchParams(window.location.search).get("to");
-    if (!isUuid(to) || to === user.id) {
+    if (!to || to === user.id) {
       if (to) window.history.replaceState({}, "", "/messages");
       return;
     }
     (async () => {
       const [u1, u2] = user.id < to ? [user.id, to] : [to, user.id];
-      const { data: profile } = await supabase.from("profiles").select("user_id, username, avatar_url, last_seen, is_verified").eq("user_id", to).maybeSingle();
-      const otherProfile = profile || { user_id: to, username: "User", avatar_url: "", last_seen: null, is_verified: false };
-      if (!isUuid(user.id)) {
+      let otherProfile: any = null;
+      if (isUuid(to)) {
+        const { data: profile } = await supabase.from("profiles").select("user_id, username, avatar_url, last_seen, is_verified").eq("user_id", to).maybeSingle();
+        otherProfile = profile;
+      } else {
+        const { data: profile } = await supabase.from("firebase_profiles" as any).select("firebase_uid, username, avatar_url, is_verified").eq("firebase_uid", to).maybeSingle();
+        const known = listVisibleKnownProfiles().find((p) => p.user_id === to);
+        otherProfile = profile
+          ? { user_id: profile.firebase_uid, username: profile.username || "User", avatar_url: profile.avatar_url || "", last_seen: null, is_verified: profile.is_verified }
+          : known || null;
+      }
+      otherProfile = otherProfile || { user_id: to, username: "User", avatar_url: "", last_seen: null, is_verified: false };
+      if (!isUuid(user.id) || !isUuid(to)) {
         setActiveConvo({ id: firebaseRoomId(user.id, to), user1_id: user.id, user2_id: to, other_user: otherProfile as any, updated_at: new Date().toISOString(), unread_count: 0 });
         window.history.replaceState({}, "", "/messages");
         return;

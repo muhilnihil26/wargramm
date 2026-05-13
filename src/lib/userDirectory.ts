@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { listKnownProfiles } from "./knownUsers";
+import { listVisibleKnownProfiles } from "./knownUsers";
 
 type UserRow = {
   user_id: string;
@@ -63,6 +63,6 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
     }));
   });
 
-  listKnownProfiles().forEach((p) => add(p));
+  listVisibleKnownProfiles().forEach((p) => add(p));
   return [...byId.values()].slice(0, limit);
 }

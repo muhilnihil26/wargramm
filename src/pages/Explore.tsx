@@ -136,7 +136,6 @@ const Explore = () => {
                 <button
                   key={u.user_id}
                   onClick={() => {
-                    if (u.is_known_only) { return; }
                     setSearchQuery(""); setSearchResults([]); navigate(`/user/${u.user_id}`);
                   }}
                   className="flex w-full items-center gap-3 rounded-xl p-3 transition-colors hover:bg-secondary"
@@ -149,7 +148,6 @@ const Explore = () => {
                   <div className="text-left min-w-0">
                     <p className="text-sm font-semibold text-foreground">{u.username}</p>
                     {u.full_name && <p className="text-xs text-muted-foreground truncate">{u.full_name}</p>}
-                    {u.is_known_only && <p className="text-[10px] text-muted-foreground">Existing user - opens after profile sync</p>}
                   </div>
                 </button>
               ))}
