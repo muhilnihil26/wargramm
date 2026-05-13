@@ -1,4 +1,4 @@
-﻿-- WarGram cloud repair + requested cleanup
+-- WarGram cloud repair + requested cleanup
 -- Run this in Supabase SQL Editor for project gggfjptfouiniexrouwk.
 -- This fixes YouTube/media schema sync, keeps admin, deletes all posts and reels.
 
@@ -153,4 +153,3 @@ DELETE FROM storage.objects WHERE bucket_id IN ('posts', 'reels');
 NOTIFY pgrst, 'reload schema';
 
 COMMIT;
-
