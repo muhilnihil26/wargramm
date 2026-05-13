@@ -9,15 +9,30 @@ BEGIN;
 TRUNCATE TABLE public.posts CASCADE;
 TRUNCATE TABLE public.reels CASCADE;
 
--- Keep admin by configured email and by known Firebase UID string if either exists in mirror tables.
-DELETE FROM public.firebase_profiles
-WHERE coalesce(email, '') <> 'muhilsiddhesh.in@gmail.com'
-  AND firebase_uid <> 'nxANfkUL63MSTv300eH6rSICw9w1';
+-- Keep admin by configured email and by known Firebase UID string if the mirror table exists.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'firebase_profiles'
+  ) THEN
+    DELETE FROM public.firebase_profiles
+    WHERE coalesce(email, '') <> 'muhilsiddhesh.in@gmail.com'
+      AND coalesce(firebase_uid, '') <> 'nxANfkUL63MSTv300eH6rSICw9w1';
+  ELSE
+    RAISE NOTICE 'public.firebase_profiles table does not exist, so Firebase profile cleanup was skipped.';
+  END IF;
+END $$;
 
 -- Delete Supabase profile rows except matching admin email if the email column exists.
 DO $$
 BEGIN
-  IF EXISTS (
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'profiles'
+  ) THEN
+    RAISE NOTICE 'public.profiles table does not exist, so profile cleanup was skipped.';
+  ELSIF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'email'
   ) THEN
