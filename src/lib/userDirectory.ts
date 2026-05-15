@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { listVisibleKnownProfiles } from "./knownUsers";
 import { searchFirebaseProfiles } from "./firebaseUserData";
+import { isHiddenExistingProfile } from "./legacyUsers";
 
 type UserRow = {
   user_id: string;
@@ -20,6 +21,7 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
 
   const add = (row: UserRow | null | undefined) => {
     if (!row?.user_id || row.user_id === currentUserId || byId.has(row.user_id)) return;
+    if (isHiddenExistingProfile(row)) return;
     const haystack = `${row.username || ""} ${row.full_name || ""} ${row.email || ""}`.toLowerCase();
     if (!haystack.includes(normalized)) return;
     byId.set(row.user_id, row);
@@ -27,7 +29,7 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
 
   const profileQuery = supabase
     .from("profiles")
-    .select("user_id, username, full_name, avatar_url, is_verified, email")
+    .select("user_id, username, full_name, avatar_url, is_verified, email, created_at, updated_at")
     .or(`username.ilike.%${term}%,full_name.ilike.%${term}%,email.ilike.%${term}%`)
     .limit(limit);
   const { data: profiles, error } = await profileQuery;
@@ -36,7 +38,7 @@ export async function searchUsersEverywhere(query: string, currentUserId?: strin
   const clientProfiles = await searchFirebaseProfiles(term, currentUserId, limit).catch(() => []);
   clientProfiles.forEach((p: any) => add(p));
 
-  const mediaColumns = "firebase_uid, firebase_email, firebase_display_name, firebase_photo_url";
+  const mediaColumns = "firebase_uid, firebase_email, firebase_display_name, firebase_photo_url, created_at";
   const mediaResults = await Promise.all([
     supabase.from("posts").select(mediaColumns).not("firebase_uid", "is", null).limit(100),
     supabase.from("reels").select(mediaColumns).not("firebase_uid", "is", null).limit(100),

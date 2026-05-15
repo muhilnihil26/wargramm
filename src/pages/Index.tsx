@@ -91,7 +91,7 @@ const Index = () => {
     queryFn: async () => {
       const { data: postsData } = await supabase
         .from("posts")
-        .select("*, profiles!posts_user_id_fkey(username, avatar_url, is_verified)")
+        .select("*, profiles!posts_user_id_fkey(username, avatar_url, is_verified, email, created_at, updated_at)")
         .order("created_at", { ascending: false })
         .limit(50);
 

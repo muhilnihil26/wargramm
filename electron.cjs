@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell } = require("electron");
+const { app, BrowserWindow, shell, session } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -12,6 +12,7 @@ const AUTH_POPUP_HOSTS = [
 ];
 let localServer;
 let mainWindow;
+let appOrigin = "https://wargram.app";
 
 function logDesktopError(message) {
   try {
@@ -128,6 +129,27 @@ async function createWindow() {
 
   win.removeMenu();
   const appUrl = await startLocalAppServer();
+  try {
+    appOrigin = new URL(appUrl).origin;
+    session.defaultSession.webRequest.onBeforeSendHeaders(
+      {
+        urls: [
+          "*://www.youtube.com/embed/*",
+          "*://www.youtube-nocookie.com/embed/*",
+          "*://www.youtube.com/iframe_api*",
+          "*://www.youtube.com/s/player/*",
+        ],
+      },
+      (details, callback) => {
+        const requestHeaders = { ...details.requestHeaders };
+        requestHeaders.Referer = `${appOrigin}/`;
+        requestHeaders.Origin = appOrigin;
+        callback({ requestHeaders });
+      },
+    );
+  } catch (error) {
+    logDesktopError(`YouTube referrer setup failed: ${error.message}`);
+  }
   win.loadURL(appUrl).catch(() => {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
   });

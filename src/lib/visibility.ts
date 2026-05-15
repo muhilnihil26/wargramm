@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { isUuid } from "./ids";
 import { mediaOwnerId } from "./firebaseMedia";
 import { readFirebaseFollowingIds } from "./firebaseUserData";
+import { isLegacyMediaRow } from "./legacyUsers";
 
 type AppUser = (User & { id: string }) | null | undefined;
 
@@ -23,6 +24,7 @@ async function getViewerFollowingIds(user: AppUser): Promise<Set<string>> {
 export async function filterVisibleMediaRows<T extends Record<string, any>>(rows: T[], user: AppUser): Promise<T[]> {
   const followingIds = await getViewerFollowingIds(user);
   return rows.filter((row: any) => {
+    if (isLegacyMediaRow(row)) return false;
     if (row?.is_removed) return false;
     const ownerId = mediaOwnerId(row);
     const visibility = row?.visibility || "public";

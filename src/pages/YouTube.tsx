@@ -6,8 +6,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { MusicTrimmer } from "@/components/MusicTrimmer";
+import { YouTubeEmbedFrame } from "@/components/YouTubeEmbedFrame";
 import { isUuid } from "@/lib/ids";
-import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
+import { getPlaylistId as parsePlaylistId, getYouTubeId as parseYouTubeId, normalizeYouTubeUrl, youtubeThumbnail } from "@/lib/youtube";
 import { mediaOwnerPayload } from "@/lib/firebaseMedia";
 import { logCloudAction } from "@/lib/cloudActions";
 import { deleteFirebaseYouTubeItem, readFirebaseYouTubeItems, saveFirebaseMedia, saveFirebaseYouTubeItem } from "@/lib/firebaseUserData";
@@ -302,15 +303,6 @@ const YouTube = () => {
   const livePreviewVideoId = getYouTubeId(previewUrl || url);
   const livePreviewPlaylistId = getPlaylistId(previewUrl || url);
 
-  const viewerEmbed = (it: any) => {
-    return youtubeEmbedUrl(it.url, {
-      playlistId: it.playlist_id,
-      start: it.trim_start || 0,
-      end: it.trim_end,
-      autoplay: true,
-    });
-  };
-
   return (
     <div className="min-h-screen bg-background pb-20">
       <header className="sticky top-0 z-40 flex items-center gap-3 border-b border-border bg-background/95 backdrop-blur-lg px-4 py-3">
@@ -350,13 +342,7 @@ const YouTube = () => {
           </button>
           {(livePreviewVideoId || livePreviewPlaylistId) && (
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
-              <iframe
-                src={youtubeEmbedUrl(previewUrl || url, { playlistId: livePreviewPlaylistId, start: trimStart, end: trimEnd })}
-                className="h-full w-full"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                title="preview"
-              />
+              <YouTubeEmbedFrame url={previewUrl || url} playlistId={livePreviewPlaylistId} start={trimStart} end={trimEnd} title="YouTube preview" className="h-full w-full" />
             </div>
           )}
           {!isPlaylistUrl && (
@@ -553,13 +539,7 @@ const YouTube = () => {
               <button onClick={() => setViewer(null)} className="text-xs text-muted-foreground">Close</button>
             </div>
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
-              <iframe
-                src={viewerEmbed(viewer)}
-                className="h-full w-full"
-                allow="autoplay; encrypted-media"
-                allowFullScreen
-                title="viewer"
-              />
+              <YouTubeEmbedFrame url={viewer.url} playlistId={viewer.playlist_id} start={viewer.trim_start || 0} end={viewer.trim_end} title={viewer.title} className="h-full w-full" />
             </div>
             {viewer.is_playlist && (
               <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
@@ -576,13 +556,7 @@ const YouTube = () => {
           <div className="w-full max-w-lg rounded-t-2xl bg-background p-4 space-y-3" onClick={(e) => e.stopPropagation()}>
             <p className="text-sm font-bold text-foreground">Share to {shareTarget === "reel" ? "Reels" : shareTarget === "short" ? "Shorts" : shareTarget === "story" ? "Story" : "Home Feed"}</p>
             <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
-              <iframe
-                src={youtubeEmbedUrl(shareItem.url, { start: shareItem.trim_start, end: shareItem.trim_end })}
-                className="h-full w-full"
-                allow="autoplay; encrypted-media; picture-in-picture"
-                allowFullScreen
-                title="share preview"
-              />
+              <YouTubeEmbedFrame url={shareItem.url} start={shareItem.trim_start} end={shareItem.trim_end} title="Share preview" className="h-full w-full" />
             </div>
             <textarea value={shareCaption} onChange={(e) => setShareCaption(e.target.value)} rows={2} placeholder="Add a caption…"
               className="w-full resize-none rounded-lg border border-border bg-secondary px-3 py-2 text-sm text-foreground outline-none focus:border-primary" />

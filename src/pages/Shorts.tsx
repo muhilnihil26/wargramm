@@ -8,8 +8,7 @@ import { profileAvatar } from "@/lib/avatar";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { filterVisibleMediaRows } from "@/lib/visibility";
-
-const SHORTS_RE = /youtube\.com\/shorts\/([\w-]{11})/;
+import { getYouTubeId } from "@/lib/youtube";
 
 const Shorts = () => {
   const { user } = useAuth();
@@ -27,7 +26,7 @@ const Shorts = () => {
         .from("reels")
         .select("*")
         .order("created_at", { ascending: false });
-      const onlyShorts = (await filterVisibleMediaRows((data || []) as any[], user)).filter((r: any) => SHORTS_RE.test(r.video_url));
+      const onlyShorts = (await filterVisibleMediaRows((data || []) as any[], user)).filter((r: any) => getYouTubeId(r.video_url));
       if (onlyShorts.length === 0) return [];
       const userIds = [...new Set(onlyShorts.map((r: any) => r.user_id))];
       const { data: profiles } = await supabase

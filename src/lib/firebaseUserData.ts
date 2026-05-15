@@ -2,6 +2,7 @@ import { get, push, ref, remove, set } from "firebase/database";
 import { database } from "@/integrations/firebase/config";
 import type { User } from "firebase/auth";
 import { mediaOwnerPayload } from "./firebaseMedia";
+import { isHiddenExistingProfile, isLegacyMediaRow } from "./legacyUsers";
 
 type MediaKind = "post" | "reel" | "story";
 
@@ -33,6 +34,7 @@ export async function readFirebaseMedia(kind: MediaKind) {
   if (!value) return [];
   return Object.values(value)
     .filter(Boolean)
+    .filter((row: any) => !isLegacyMediaRow(row))
     .sort((a: any, b: any) => +new Date(b.created_at || 0) - +new Date(a.created_at || 0)) as any[];
 }
 
@@ -196,7 +198,10 @@ export async function searchFirebaseProfiles(term: string, currentUserId?: strin
       avatar_url: profile.avatar_url || "",
       email: profile.email || "",
       is_verified: !!profile.is_verified,
+      created_at: profile.created_at || null,
+      updated_at: profile.updated_at || 0,
     }))
+    .filter((row) => !isHiddenExistingProfile(row))
     .filter((row) => row.user_id !== currentUserId)
     .filter((row) => `${row.username} ${row.full_name} ${row.email}`.toLowerCase().includes(normalized))
     .slice(0, limit);
@@ -215,6 +220,7 @@ export async function listFirebaseProfiles(currentUserId?: string | null, limit 
       is_verified: !!profile.is_verified,
       updated_at: profile.updated_at || 0,
     }))
+    .filter((row) => !isHiddenExistingProfile(row))
     .filter((row) => row.user_id !== currentUserId)
     .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))
     .slice(0, limit);

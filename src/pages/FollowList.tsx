@@ -4,6 +4,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { FollowButton } from "@/components/FollowButton";
 import { profileAvatar } from "@/lib/avatar";
+import { isUuid } from "@/lib/ids";
+import { hideLegacyRows } from "@/lib/legacyUsers";
+import { readFirebasePublicProfile } from "@/lib/firebaseUserData";
+import { get, ref } from "firebase/database";
+import { database } from "@/integrations/firebase/config";
 
 type Tab = "followers" | "following";
 
@@ -16,6 +21,10 @@ const FollowList = () => {
   const { data: profile } = useQuery({
     queryKey: ["follow-list-profile", userId],
     queryFn: async () => {
+      if (!isUuid(userId)) {
+        const data = await readFirebasePublicProfile(userId!).catch(() => null);
+        return { username: data?.username || data?.email?.split("@")[0] || "User" };
+      }
       const { data } = await supabase.from("profiles").select("username").eq("user_id", userId!).single();
       return data;
     },
@@ -26,17 +35,37 @@ const FollowList = () => {
     queryKey: ["follow-list", userId, tab],
     queryFn: async () => {
       if (!userId) return [];
+      const firebaseSnap = tab === "followers"
+        ? await get(ref(database, `followers/${userId}`)).catch(() => null)
+        : await get(ref(database, `follows/${userId}/following`)).catch(() => null);
+      const firebaseIds = firebaseSnap?.val?.() ? Object.keys(firebaseSnap.val()) : [];
+
       // followers = people who follow this user; following = people this user follows
-      const { data: rows } = tab === "followers"
-        ? await supabase.from("follows").select("follower_id").eq("following_id", userId)
-        : await supabase.from("follows").select("following_id").eq("follower_id", userId);
-      const ids = (rows || []).map((r: any) => tab === "followers" ? r.follower_id : r.following_id);
+      const { data: rows } = isUuid(userId)
+        ? tab === "followers"
+          ? await supabase.from("follows").select("follower_id").eq("following_id", userId)
+          : await supabase.from("follows").select("following_id").eq("follower_id", userId)
+        : { data: [] as any[] };
+      const supabaseIds = (rows || []).map((r: any) => tab === "followers" ? r.follower_id : r.following_id);
+      const ids = [...new Set([...supabaseIds, ...firebaseIds])];
       if (ids.length === 0) return [];
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("user_id, username, avatar_url, full_name")
-        .in("user_id", ids);
-      return profiles || [];
+
+      const uuidIds = ids.filter(isUuid);
+      const firebaseOnlyIds = ids.filter((id) => !isUuid(id));
+      const { data: profiles } = uuidIds.length
+        ? await supabase.from("profiles").select("user_id, username, avatar_url, full_name, email, created_at, updated_at").in("user_id", uuidIds)
+        : { data: [] as any[] };
+      const firebaseProfiles = await Promise.all(firebaseOnlyIds.map(async (id) => {
+        const data = await readFirebasePublicProfile(id).catch(() => null);
+        return data ? {
+          user_id: id,
+          username: data.username || data.email?.split("@")[0] || "user",
+          avatar_url: data.avatar_url || "",
+          full_name: data.full_name || "",
+          email: data.email || "",
+        } : null;
+      }));
+      return hideLegacyRows([...(profiles || []), ...firebaseProfiles.filter(Boolean)] as any[]);
     },
     enabled: !!userId,
   });

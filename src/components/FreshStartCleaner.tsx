@@ -80,10 +80,10 @@ export function FreshStartCleaner() {
 
       await Promise.all(
         supabaseTables.map((table) =>
-          supabase.from(table as any).delete().neq("id", ZERO_UUID).catch(() => null),
+          supabase.from(table as any).delete().neq("id", ZERO_UUID).then(() => null, () => null),
         ),
       );
-      await supabase.from("profiles").delete().neq("email", ADMIN_EMAIL).catch(() => null);
+      await supabase.from("profiles").delete().neq("email", ADMIN_EMAIL).then(() => null, () => null);
 
       Object.keys(localStorage)
         .filter((key) => key.startsWith("wargram-"))

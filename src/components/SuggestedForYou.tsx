@@ -7,6 +7,8 @@ import { VerifiedBadge } from "./VerifiedBadge";
 import { profileAvatar } from "@/lib/avatar";
 import { isUuid } from "@/lib/ids";
 import { listFirebaseProfiles, readFirebaseFollowingIds } from "@/lib/firebaseUserData";
+import { isHiddenExistingProfile } from "@/lib/legacyUsers";
+import { listVisibleKnownProfiles } from "@/lib/knownUsers";
 
 export function SuggestedForYou() {
   const { user } = useAuth();
@@ -33,14 +35,14 @@ export function SuggestedForYou() {
 
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("user_id, username, avatar_url, full_name, is_verified")
+        .select("user_id, username, avatar_url, full_name, is_verified, email, created_at, updated_at")
         .order("created_at", { ascending: false })
         .limit(50);
 
       const firebaseProfiles = await listFirebaseProfiles(user.id, 30).catch(() => []);
       const byId = new Map<string, any>();
-      [...(firebaseProfiles || []), ...(profiles || [])].forEach((p: any) => {
-        if (!excludeIds.has(p.user_id) && !byId.has(p.user_id)) byId.set(p.user_id, p);
+      [...(firebaseProfiles || []), ...(profiles || []), ...listVisibleKnownProfiles()].forEach((p: any) => {
+        if (!excludeIds.has(p.user_id) && !byId.has(p.user_id) && !isHiddenExistingProfile(p)) byId.set(p.user_id, p);
       });
 
       return [...byId.values()]
@@ -55,7 +57,7 @@ export function SuggestedForYou() {
     <div className="border-b border-border py-3">
       <div className="flex items-center justify-between px-4 pb-2">
         <h2 className="text-sm font-semibold text-muted-foreground">Suggested for you</h2>
-        <button className="text-xs font-semibold text-foreground">See All</button>
+        <button onClick={() => navigate("/explore")} className="text-xs font-semibold text-foreground">See All</button>
       </div>
       <div className="overflow-x-auto scrollbar-hide">
         <div className="flex gap-3 px-4">

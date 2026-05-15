@@ -96,8 +96,9 @@ export function MusicPlayer() {
                 {videoId && (
                   <div className="rounded-lg overflow-hidden aspect-video">
                     <iframe
-                      src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
-                      allow="autoplay; encrypted-media"
+                      src={`https://www.youtube.com/embed/${videoId}?autoplay=1&playsinline=1&rel=0`}
+                      allow="autoplay; encrypted-media; picture-in-picture"
+                      referrerPolicy="strict-origin-when-cross-origin"
                       allowFullScreen
                       className="w-full h-full"
                     />

@@ -17,7 +17,7 @@ import { getKnownProfile } from "@/lib/knownUsers";
 import { isUuid } from "@/lib/ids";
 import { readClientProfile } from "@/lib/cloudProfile";
 import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
-import { readFirebaseMedia, readFirebasePostBookmarks } from "@/lib/firebaseUserData";
+import { readFirebaseFollowCounts, readFirebaseMedia, readFirebasePostBookmarks } from "@/lib/firebaseUserData";
 import { filterVisibleMediaRows } from "@/lib/visibility";
 import { mediaOwnerId } from "@/lib/firebaseMedia";
 
@@ -105,10 +105,15 @@ const Profile = () => {
         .map((key) => key.split(":").pop())
         .filter(Boolean) as string[];
       const firebaseIds = await readFirebasePostBookmarks(user.id).catch(() => []);
-      const ids = [...new Set([...firebaseIds, ...localIds])].filter((id) => isUuid(id));
+      const ids = [...new Set([...firebaseIds, ...localIds])];
       if (ids.length === 0) return [];
-      const { data: posts } = await supabase.from("posts").select("*").in("id", ids);
-      return posts || [];
+      const uuidIds = ids.filter((id) => isUuid(id));
+      const [{ data: posts }, firebasePosts] = await Promise.all([
+        uuidIds.length ? supabase.from("posts").select("*").in("id", uuidIds) : Promise.resolve({ data: [] }),
+        readFirebaseMedia("post").catch(() => []),
+      ]);
+      const firebaseSaved = firebasePosts.filter((p: any) => ids.includes(p.id));
+      return [...(posts || []), ...firebaseSaved];
     },
     enabled: !!user && !isUuid(user.id),
   });
@@ -118,12 +123,23 @@ const Profile = () => {
     staleTime: 5_000,
     queryFn: async () => {
       if (!user) return { posts: 0, followers: 0, following: 0 };
+      const [firebasePosts, firebaseReels, firebaseFollowCounts] = await Promise.all([
+        readFirebaseMedia("post").catch(() => []),
+        readFirebaseMedia("reel").catch(() => []),
+        readFirebaseFollowCounts(user.id).catch(() => ({ followers: 0, following: 0 })),
+      ]);
+      const firebasePostCount = firebasePosts.filter((p: any) => mediaOwnerId(p) === user.id).length;
+      const firebaseReelCount = firebaseReels.filter((r: any) => mediaOwnerId(r) === user.id).length;
       if (!isUuid(user.id)) {
         const [{ count: postCount }, { count: reelCount }] = await Promise.all([
           supabase.from("posts").select("*", { count: "exact", head: true }).eq("firebase_uid", user.id),
           supabase.from("reels").select("*", { count: "exact", head: true }).eq("firebase_uid", user.id),
         ]);
-        return { posts: (postCount || 0) + (reelCount || 0), followers: 0, following: 0 };
+        return {
+          posts: (postCount || 0) + (reelCount || 0) + firebasePostCount + firebaseReelCount,
+          followers: firebaseFollowCounts.followers,
+          following: firebaseFollowCounts.following,
+        };
       }
       const [{ count: postCount }, { count: reelCount }, { count: followerCount }, { count: followingCount }] = await Promise.all([
         supabase.from("posts").select("*", { count: "exact", head: true }).eq("user_id", user.id),
@@ -131,7 +147,11 @@ const Profile = () => {
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("following_id", user.id),
         supabase.from("follows").select("*", { count: "exact", head: true }).eq("follower_id", user.id),
       ]);
-      return { posts: (postCount || 0) + (reelCount || 0), followers: followerCount || 0, following: followingCount || 0 };
+      return {
+        posts: (postCount || 0) + (reelCount || 0) + firebasePostCount + firebaseReelCount,
+        followers: Math.max(followerCount || 0, firebaseFollowCounts.followers),
+        following: Math.max(followingCount || 0, firebaseFollowCounts.following),
+      };
     },
     enabled: !!user,
   });

@@ -5,12 +5,13 @@ import { LyricsOverlay, type LyricLine } from "./LyricsOverlay";
 import { FollowButton } from "./FollowButton";
 import { ReelCommentsSheet } from "./ReelCommentsSheet";
 import { EditPostModal } from "./EditPostModal";
+import { YouTubeEmbedFrame } from "./YouTubeEmbedFrame";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { isUuid } from "@/lib/ids";
-import { getYouTubeId, youtubeEmbedUrl, youtubeThumbnail } from "@/lib/youtube";
+import { getYouTubeId } from "@/lib/youtube";
 import { logCloudAction } from "@/lib/cloudActions";
 import { deleteFirebaseMedia, saveFirebaseLike, saveFirebaseReelBookmark } from "@/lib/firebaseUserData";
 
@@ -192,22 +193,7 @@ export function ReelItem({
         </div>
       ) : isYouTube ? (
         <div className="absolute inset-0 bg-black">
-          {isVisible ? (
-            <iframe
-              src={`${youtubeEmbedUrl(mediaUrl, { autoplay: true, mute: globalMuted, loop: true })}&controls=1`}
-              title="YouTube"
-              className="h-full w-full"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
-          ) : (
-            <div className="relative h-full w-full bg-black">
-              <img src={youtubeThumbnail(mediaUrl) || `https://i.ytimg.com/vi/${youTubeId}/hqdefault.jpg`} alt="" className="h-full w-full object-cover opacity-70" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Play className="h-14 w-14 fill-white/80 text-white/80" />
-              </div>
-            </div>
-          )}
+          <YouTubeEmbedFrame url={mediaUrl} title={caption || "YouTube reel"} className="h-full w-full" autoplay={isVisible} muted={globalMuted} />
         </div>
       ) : isImage ? (
         <img src={mediaUrl} alt="" className="h-full w-full object-cover" onError={() => setMediaFailed(true)} />

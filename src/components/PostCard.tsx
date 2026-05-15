@@ -9,11 +9,12 @@ import { LyricsOverlay } from "./LyricsOverlay";
 import { FollowButton } from "./FollowButton";
 import { ShareSheet } from "./ShareSheet";
 import { EditPostModal } from "./EditPostModal";
+import { YouTubeEmbedFrame } from "./YouTubeEmbedFrame";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 import { isUuid } from "@/lib/ids";
-import { getYouTubeId, youtubeEmbedUrl } from "@/lib/youtube";
+import { getYouTubeId } from "@/lib/youtube";
 import { deleteFirebaseMedia, saveFirebaseLike, saveFirebasePostBookmark } from "@/lib/firebaseUserData";
 import { logCloudAction } from "@/lib/cloudActions";
 
@@ -159,15 +160,7 @@ export function PostCard({ id, username, userId, avatar, image, isVideo, caption
             const ytId = getYouTubeId(image);
             if (ytId) {
               return (
-                <div className="relative w-full aspect-video">
-                  <iframe
-                    src={youtubeEmbedUrl(image)}
-                    title="YouTube video"
-                    className="absolute inset-0 w-full h-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
+                <YouTubeEmbedFrame url={image} title={caption || "YouTube post"} className="aspect-video w-full" />
               );
             }
             return isVideo ? (

@@ -35,6 +35,7 @@ import Manual from "./pages/Manual.tsx";
 import Legal from "./pages/Legal.tsx";
 import AccountType from "./pages/AccountType.tsx";
 import { usePresence } from "@/hooks/usePresence";
+import { useCloudAutoSync } from "@/hooks/useCloudAutoSync";
 import { IntroSplash } from "@/components/IntroSplash";
 import { NotificationListener } from "@/components/NotificationListener";
 import { NoticeBanner } from "@/components/NoticeBanner";
@@ -84,6 +85,7 @@ function AppRoutes() {
   const { user } = useAuth();
   const location = useLocation();
   usePresence();
+  useCloudAutoSync();
 
   useEffect(() => {
     if (user) {

@@ -1,5 +1,10 @@
 export function getYouTubeId(input: string | null | undefined): string | null {
-  const value = decodeURIComponent((input || "").trim());
+  let value = (input || "").trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    // Keep the original text if a pasted URL has a malformed escape sequence.
+  }
   if (!value) return null;
 
   try {
@@ -66,8 +71,11 @@ export function youtubeEmbedUrl(
     rel: "0",
     modestbranding: "1",
     playsinline: "1",
-    enablejsapi: "1",
+    fs: "1",
   });
+  if (typeof window !== "undefined" && /^https?:/.test(window.location.origin)) {
+    params.set("origin", window.location.origin);
+  }
 
   if (options.autoplay) params.set("autoplay", "1");
   if (options.mute) params.set("mute", "1");
@@ -85,6 +93,14 @@ export function youtubeEmbedUrl(
     params.set("playlist", videoId);
   }
   return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
+}
+
+export function youtubeWatchUrl(input: string | null | undefined): string {
+  const videoId = getYouTubeId(input);
+  const playlistId = getPlaylistId(input);
+  if (videoId) return `https://www.youtube.com/watch?v=${videoId}${playlistId ? `&list=${encodeURIComponent(playlistId)}` : ""}`;
+  if (playlistId) return `https://www.youtube.com/playlist?list=${encodeURIComponent(playlistId)}`;
+  return String(input || "");
 }
 
 function isYouTubeId(value: string | null | undefined): value is string {

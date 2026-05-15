@@ -11,6 +11,7 @@ import { getYouTubeId, youtubeThumbnail } from "@/lib/youtube";
 import { searchUsersEverywhere } from "@/lib/userDirectory";
 import { filterVisibleMediaRows } from "@/lib/visibility";
 import { readFirebaseMedia } from "@/lib/firebaseUserData";
+import { hideLegacyRows } from "@/lib/legacyUsers";
 
 const topics = ["For you", "Trending", "Creators", "Music", "Travel", "Style"];
 type ExploreFilter = "all" | "posts" | "reels" | "people";
@@ -32,7 +33,7 @@ const Explore = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("posts")
-        .select("*, profiles!posts_user_id_fkey(username, avatar_url, is_verified)")
+        .select("*, profiles!posts_user_id_fkey(username, avatar_url, is_verified, email, created_at, updated_at)")
         .order("created_at", { ascending: false })
         .limit(60);
       const firebasePosts = await readFirebaseMedia("post").catch(() => []);
@@ -73,11 +74,11 @@ const Explore = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("user_id, username, full_name, avatar_url, is_verified, is_celebrity, celebrity_score")
+        .select("user_id, username, full_name, avatar_url, is_verified, is_celebrity, celebrity_score, email, created_at, updated_at")
         .or("is_celebrity.eq.true,is_verified.eq.true")
         .order("celebrity_score", { ascending: false })
         .limit(12);
-      return data || [];
+      return hideLegacyRows(data || []);
     },
   });
 

@@ -5,6 +5,9 @@ const config: CapacitorConfig = {
   appName: 'Wargram',
   webDir: 'dist',
   bundledWebRuntime: false,
+  server: {
+    androidScheme: 'https',
+  },
   plugins: {
     PushNotifications: {
       presentationOptions: ["badge", "sound", "alert"],

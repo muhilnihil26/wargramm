@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Pause, Play } from "lucide-react";
 import { YouTubeAudio } from "./YouTubeAudio";
+import { YouTubeEmbedFrame } from "./YouTubeEmbedFrame";
 import { profileAvatar } from "@/lib/avatar";
+import { getYouTubeId } from "@/lib/youtube";
 
 interface Story {
   id: string;
@@ -35,7 +37,9 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
   const elapsedRef = useRef<number>(0);
 
   const story = stories[currentIndex];
-  const isVideo = story && isVideoUrl(story.image_url);
+  const youTubeId = story ? getYouTubeId(story.image_url) : null;
+  const isYouTube = !!youTubeId;
+  const isVideo = story && !isYouTube && isVideoUrl(story.image_url);
 
   // Reset progress when story changes
   useEffect(() => {
@@ -124,7 +128,11 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
       </div>
 
       {/* Media */}
-      {isVideo ? (
+      {isYouTube ? (
+        <div className="relative flex h-full w-full items-center justify-center bg-black">
+          <YouTubeEmbedFrame url={story.image_url} title="YouTube story" className="aspect-video w-full max-w-5xl" autoplay={!paused} />
+        </div>
+      ) : isVideo ? (
         <video
           key={story.id}
           ref={videoRef}
@@ -152,8 +160,12 @@ export function StoryViewer({ stories, initialIndex, onClose }: StoryViewerProps
       )}
 
       {/* Tap zones */}
-      <button onClick={goPrev} className="absolute left-0 top-0 bottom-0 w-1/3 z-10" aria-label="Previous" />
-      <button onClick={goNext} className="absolute right-0 top-0 bottom-0 w-1/3 z-10" aria-label="Next" />
+      {!isYouTube && (
+        <>
+          <button onClick={goPrev} className="absolute left-0 top-0 bottom-0 w-1/3 z-10" aria-label="Previous" />
+          <button onClick={goNext} className="absolute right-0 top-0 bottom-0 w-1/3 z-10" aria-label="Next" />
+        </>
+      )}
     </div>
   );
 }

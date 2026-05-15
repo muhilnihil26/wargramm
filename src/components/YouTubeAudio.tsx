@@ -54,7 +54,8 @@ export function YouTubeAudio({ url, title, start = 0, end, autoPlay = true, comp
       <iframe
         ref={iframeRef}
         src={`${youtubeEmbedUrl(url, { start, end, autoplay: autoPlay, loop: true, mute: muted })}&controls=${params.get("controls") || "0"}`}
-        allow="autoplay; encrypted-media"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        referrerPolicy="strict-origin-when-cross-origin"
         className="h-0 w-0 border-0 opacity-0 pointer-events-none absolute"
         style={{ position: "absolute", left: "-9999px" }}
         title="background music"
